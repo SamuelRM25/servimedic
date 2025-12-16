@@ -1,0 +1,117 @@
+[2025-12-10 05:36:32] Processing payment request | Data: Array
+(
+    [id_compra] => 2
+    [monto] => 1500
+    [fecha_abono] => 2025-12-09
+    [forma_pago] => Efectivo
+    [referencia] => 
+    [observaciones] => 
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 05:36:32] Fetched purchase data | Data: Array
+(
+    [total] => 3250.00
+    [abonado] => 2500.00
+    [saldo] => 750.00
+    [codigo_referencia] => 000001
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 05:36:32] Validation failed: Amount exceeds balance | Data: Array
+(
+    [monto] => 1500
+    [saldo] => 750.00
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 05:36:32] Error occurred, transaction rolled back | Data: El monto excede el saldo pendiente
+--------------------------------------------------------------------------------
+[2025-12-10 05:42:18] Processing payment request | Data: Array
+(
+    [id_compra] => 8
+    [monto] => 625
+    [fecha_abono] => 2025-12-09
+    [forma_pago] => Efectivo
+    [referencia] => 
+    [observaciones] => 
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 05:42:18] Fetched purchase data | Data: Array
+(
+    [total] => 1500.00
+    [abonado] => 0.00
+    [saldo] => 1500.00
+    [codigo_referencia] => 000007
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 05:42:18] Updating purchase | Data: Array
+(
+    [nuevoAbonado] => 625
+    [nuevoSaldo] => 875
+    [nuevoEstado] => Abonado
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 05:42:18] Transaction committed successfully
+--------------------------------------------------------------------------------
+[2025-12-10 05:42:54] Processing payment request | Data: Array
+(
+    [id_compra] => 8
+    [monto] => 1500
+    [fecha_abono] => 2025-12-09
+    [forma_pago] => Efectivo
+    [referencia] => 
+    [observaciones] => 
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 05:42:54] Fetched purchase data | Data: Array
+(
+    [total] => 1500.00
+    [abonado] => 625.00
+    [saldo] => 875.00
+    [codigo_referencia] => 000007
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 05:42:54] Validation failed: Amount exceeds balance | Data: Array
+(
+    [monto] => 1500
+    [saldo] => 875.00
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 05:42:54] Error occurred, transaction rolled back | Data: El monto excede el saldo pendiente
+--------------------------------------------------------------------------------
+[2025-12-10 06:04:50] Processing batch payment request | Data: Array
+(
+    [id_compra] => 8
+    [monto] => 1500
+    [fecha_abono] => 2025-12-10
+    [forma_pago] => Efectivo
+    [referencia] => 
+    [observaciones] => 
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 06:04:50] Batch info | Data: Array
+(
+    [ref] => 000007
+    [items_count] => 2
+    [saldo_total] => 4000
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 06:04:50] Applying payment to item | Data: Array
+(
+    [id] => 7
+    [aplicado] => 1500
+    [nuevo_saldo] => 1625
+)
+
+--------------------------------------------------------------------------------
+[2025-12-10 06:04:50] Batch payment completed successfully
+--------------------------------------------------------------------------------
