@@ -1,13 +1,12 @@
-
 <?php
 // config/database.php
 
 class Database {
-    private $host = "localhost";
-    private $db_name = "servimedic_pruebas";
-    private $username = "root";
-    private $password = "";
-    private $port = "8886";
+    private $host = "buyvuolarphibfd4i5ie-mysql.services.clever-cloud.com";
+    private $db_name = "buyvuolarphibfd4i5ie";
+    private $username = "uebyutsweyo11mee";
+    private $password = "7sVDIlXBSrSGUDS4R1J"; // MAMP suele usar 'root' como contraseña por defecto
+    private $port = "20926";
     private $conn = null;
 
     public function getConnection() {

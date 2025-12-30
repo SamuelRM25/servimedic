@@ -700,6 +700,9 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
         <!-- Page Header -->
         <div class="page-header">
             <div>
+                <a href="../dashboard/index.php" class="back-btn">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
                 <h1 class="page-title">Inventario</h1>
                 <p class="text-muted">
                     <?php if ($userRole === 'Administrador'): ?>

@@ -64,6 +64,58 @@ try {
     $stmtFarmacia->execute();
     $farmaciaQueue = $stmtFarmacia->fetchAll(PDO::FETCH_ASSOC);
 
+    // 6. Transferencias (Notificaciones)
+    $transferenciasEnviadas = [];
+    $transferenciasEntrantes = [];
+    
+    // Obtener ID de sucursal del usuario actual (Helper query if not already known)
+    if (!isset($userSucursal) && isset($_SESSION['user_id'])) {
+        $stmtUserSuc = $conn->prepare("SELECT id_sucursal FROM usuarios WHERE id = ?");
+        $stmtUserSuc->execute([$_SESSION['user_id']]);
+        $userSuc = $stmtUserSuc->fetch(PDO::FETCH_ASSOC);
+        $userSucursalId = $userSuc['id_sucursal'] ?? 0;
+    } else {
+        // If userSucursal is not set here (it's set in inventory/index.php but not necessarily here), fetch it.
+        // Actually, dashboard/index.php doesn't seem to fetch the user's branch ID explicitly in the view code above, 
+        // let's grab it for filtering.
+        $userSucursalId = $_SESSION['id_sucursal'] ?? 0; // Assuming it might be in session, or we fetch it.
+        if ($userSucursalId == 0 && isset($_SESSION['user_id'])) {
+             $stmtUserSuc = $conn->prepare("SELECT id_sucursal FROM usuarios WHERE id = ?");
+             $stmtUserSuc->execute([$_SESSION['user_id']]);
+             $userSuc = $stmtUserSuc->fetch(PDO::FETCH_ASSOC);
+             $userSucursalId = $userSuc['id_sucursal'] ?? 0;
+        }
+    }
+
+    try {
+        // Transferencias Enviadas (Recientes, éxito)
+        $stmtSent = $conn->prepare("
+            SELECT t.*, s.nombre as sucursal_destino_nombre, i.nom_medicamento
+            FROM transferencias t
+            JOIN sucursales s ON t.id_sucursal_destino = s.id_sucursal
+            JOIN inventario i ON t.id_inventario_origen = i.id_inventario
+            WHERE t.id_sucursal_origen = ? 
+            ORDER BY t.fecha_envio DESC LIMIT 5
+        ");
+        $stmtSent->execute([$userSucursalId]);
+        $transferenciasEnviadas = $stmtSent->fetchAll(PDO::FETCH_ASSOC);
+
+        // Transferencias Entrantes (En Camino)
+        $stmtIncoming = $conn->prepare("
+            SELECT t.*, s.nombre as sucursal_origen_nombre, i.nom_medicamento
+            FROM transferencias t
+            JOIN sucursales s ON t.id_sucursal_origen = s.id_sucursal
+            JOIN inventario i ON t.id_inventario_origen = i.id_inventario
+            WHERE t.id_sucursal_destino = ? AND t.estado = 'En Camino'
+            ORDER BY t.fecha_envio ASC
+        ");
+        $stmtIncoming->execute([$userSucursalId]);
+        $transferenciasEntrantes = $stmtIncoming->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        // Table might not exist yet if transfer_product.php hasn't been run or lazy init failed.
+        // Just ignore notifications in that case.
+    }
+
     // 2. Stats
     // Medicamentos por vencer (< 60 dias)
     $stmt = $conn->query("SELECT COUNT(*) FROM inventario WHERE fecha_vencimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 60 DAY)");
@@ -119,6 +171,8 @@ try {
     $waitingCount = 0;
     $cobrosPendientes = [];
     $farmaciaQueue = [];
+    $transferenciasEnviadas = [];
+    $transferenciasEntrantes = [];
     // Ensure doctores is defined if main try fails
     if (!isset($doctores)) { $doctores = []; }
     if (!isset($pacientes)) { $pacientes = []; }
@@ -722,6 +776,53 @@ try {
                 grid-template-columns: 1fr;
             }
         }
+
+        <!-- Notifications Section -->
+        <?php if (!empty($transferenciasEntrantes) || !empty($transferenciasEnviadas)): ?>
+        <div style="margin-bottom: 2rem;">
+            <?php if (!empty($transferenciasEntrantes)): ?>
+                <?php foreach ($transferenciasEntrantes as $trans): ?>
+                <div style="background: #EBF8FF; border-left: 5px solid #4299E1; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div style="background: #4299E1; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                            <i class="bi bi-truck"></i>
+                        </div>
+                        <div>
+                            <h4 style="font-size: 1rem; color: #2C5282; margin-bottom: 0.2rem;">Transferencia en Camino</h4>
+                            <p style="font-size: 0.9rem; color: #4A5568;">
+                                Vienen <strong><?php echo $trans['cantidad']; ?></strong> unidades de <strong><?php echo htmlspecialchars($trans['nom_medicamento']); ?></strong> desde <strong><?php echo htmlspecialchars($trans['sucursal_origen_nombre']); ?></strong>.
+                            </p>
+                        </div>
+                    </div>
+                    <span style="font-size: 0.8rem; color: #718096; background: white; padding: 0.25rem 0.5rem; border-radius: 4px;">
+                        <?php echo date('d/m H:i', strtotime($trans['fecha_envio'])); ?>
+                    </span>
+                </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+
+            <?php if (!empty($transferenciasEnviadas)): ?>
+                <?php foreach ($transferenciasEnviadas as $trans): ?>
+                <div style="background: #F0FFF4; border-left: 5px solid #48BB78; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div style="background: #48BB78; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                            <i class="bi bi-check-lg"></i>
+                        </div>
+                        <div>
+                            <h4 style="font-size: 1rem; color: #276749; margin-bottom: 0.2rem;">Transferencia Enviada Correctamente</h4>
+                            <p style="font-size: 0.9rem; color: #4A5568;">
+                                Se enviaron <strong><?php echo $trans['cantidad']; ?></strong> unidades de <strong><?php echo htmlspecialchars($trans['nom_medicamento']); ?></strong> a <strong><?php echo htmlspecialchars($trans['sucursal_destino_nombre']); ?></strong>.
+                            </p>
+                        </div>
+                    </div>
+                     <span style="font-size: 0.8rem; color: #718096; background: white; padding: 0.25rem 0.5rem; border-radius: 4px;">
+                        <?php echo date('d/m H:i', strtotime($trans['fecha_envio'])); ?>
+                    </span>
+                </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
 
         /* Queue Section */
         .queue-container {
