@@ -10,61 +10,29 @@ if (!isset($_SESSION['user_id'])) {
 try {
     $database = new Database();
     $conn = $database->getConnection();
-    
-    // Obtener todos los cobros (exámenes + procedimientos)
-    // Union de ambas tablas para mostrar todos los cobros
+
     $stmt = $conn->prepare("
-        (SELECT 
-            e.id_examen as id,
-            'Examen' as tipo,
-            e.nombre_paciente,
-            e.tipo_paciente,
-            e.tipo_pago,
-            e.monto,
-            e.metodo_pago,
-            e.numero_ticket,
-            e.fecha_examen as fecha,
-            e.examenes_realizados as concepto,
-            s.nombre as sucursal_nombre
-        FROM examenes e
-        LEFT JOIN sucursales s ON e.id_sucursal = s.id_sucursal)
-        UNION ALL
-        (SELECT 
-            p.id_procedimiento as id,
-            'Procedimiento' as tipo,
-            p.nombre_paciente,
-            p.tipo_paciente,
-            p.tipo_pago,
-            p.monto,
-            p.metodo_pago,
-            p.numero_ticket,
-            p.fecha_procedimiento as fecha,
-            p.procedimiento_realizado as concepto,
-            s.nombre as sucursal_nombre
-        FROM procedimientos_menores p
-        LEFT JOIN sucursales s ON p.id_sucursal = s.id_sucursal)
-        UNION ALL
-        (SELECT 
+        SELECT
             o.id_orden as id,
             o.tipo_cobro as tipo,
-            CONCAT(p.nombre, ' ', p.apellido) as nombre_paciente,
-            'Privado' as tipo_paciente,
+            c.nombre as nombre_cliente,
+            'Privado' as tipo_cliente,
             'Privado' as tipo_pago,
             o.monto,
             'Efectivo' as metodo_pago,
             LPAD(o.id_orden, 6, '0') as numero_ticket,
             o.fecha_pago as fecha,
             o.descripcion as concepto,
-            'Central' as sucursal_nombre
+            (SELECT nombre FROM sucursales LIMIT 1) as sucursal_nombre
         FROM ordenes_cobro o
-        JOIN pacientes p ON o.id_paciente = p.id_paciente
-        WHERE o.estado = 'Pagado')
+        JOIN clientes c ON o.id_cliente = c.id_cliente
+        WHERE o.estado = 'Pagado'
         ORDER BY fecha DESC
         LIMIT 100
     ");
     $stmt->execute();
     $cobros = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+
     // Estadísticas
     $totalCobros = count($cobros);
     $totalMonto = array_sum(array_column($cobros, 'monto'));
@@ -83,7 +51,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cobros - Servimedic</title>
+    <title>Cobros - CLINOVA</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -93,8 +61,8 @@ try {
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
-            --color-orange: #FF6B35;
-            --color-blue: #4FC3F7;
+            --color-orange: #FF3D00;
+            --color-blue: #1FA8FF;
             --color-white: #FFFFFF;
             --color-text: #2D3748;
             --color-text-light: #718096;
@@ -110,7 +78,7 @@ try {
         .back-btn:hover { background: linear-gradient(135deg, var(--color-orange), var(--color-blue)); color: white; border-color: transparent; }
         .page-title { font-size: 1.75rem; font-weight: 700; color: var(--color-text); }
         .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.625rem 1.25rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; border: none; text-decoration: none; }
-        .btn-primary { background: linear-gradient(135deg, var(--color-orange), #E85A2B); color: white; }
+        .btn-primary { background: linear-gradient(135deg, var(--color-orange), #E63400); color: white; }
         .btn-secondary { background: var(--color-text-light); color: white; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
         .stat-card { background: var(--color-white); padding: 1.25rem; border-radius: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
@@ -184,7 +152,7 @@ try {
         <!-- Search -->
         <div class="search-box">
             <i class="bi bi-search"></i>
-            <input type="text" id="searchInput" placeholder="Buscar por paciente, ticket, concepto...">
+            <input type="text" id="searchInput" placeholder="Buscar por cliente, ticket, concepto...">
         </div>
 
         <!-- Table -->
@@ -199,7 +167,7 @@ try {
                             <th>Ticket</th>
                             <th>Fecha</th>
                             <th>Tipo</th>
-                            <th>Paciente</th>
+                            <th>Cliente</th>
                             <th>Concepto</th>
                             <th>Tipo Pago</th>
                             <th>Método</th>
@@ -218,7 +186,7 @@ try {
                                     <?php echo $cobro['tipo']; ?>
                                 </span>
                             </td>
-                            <td><?php echo htmlspecialchars($cobro['nombre_paciente']); ?></td>
+                            <td><?php echo htmlspecialchars($cobro['nombre_cliente']); ?></td>
                             <td><small><?php echo htmlspecialchars($cobro['concepto']); ?></small></td>
                             <td>
                                 <?php 
@@ -266,7 +234,7 @@ try {
             printTicket({
                 ticketNumber: cobro.numero_ticket || '---',
                 date: new Date(cobro.fecha).toLocaleString(),
-                patientName: cobro.nombre_paciente,
+                patientName: cobro.nombre_cliente,
                 items: [{
                     quantity: 1,
                     description: cobro.concepto,

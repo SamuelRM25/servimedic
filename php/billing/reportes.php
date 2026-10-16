@@ -32,44 +32,25 @@ if ($tipo_pago) {
 
 $whereSQL = implode(' AND ', $whereClauses);
 
-// Query combinado
+// Query: cobros desde ordenes_cobro
 $sql = "
-    SELECT * FROM (
-        (SELECT 
-            e.id_examen as id,
-            'Examen' as tipo,
-            e.nombre_paciente,
-            e.tipo_paciente,
-            e.tipo_pago,
-            e.monto,
-            e.metodo_pago,
-            e.numero_ticket,
-            e.fecha_examen as fecha,
-            e.examenes_realizados as concepto,
-            s.nombre as sucursal_nombre,
-            u.nombre as usuario_nombre
-        FROM examenes e
-        LEFT JOIN sucursales s ON e.id_sucursal = s.id_sucursal
-        LEFT JOIN usuarios u ON e.id_usuario = u.id)
-        UNION ALL
-        (SELECT 
-            p.id_procedimiento as id,
-            'Procedimiento' as tipo,
-            p.nombre_paciente,
-            p.tipo_paciente,
-            p.tipo_pago,
-            p.monto,
-            p.metodo_pago,
-            p.numero_ticket,
-            p.fecha_procedimiento as fecha,
-            p.procedimiento_realizado as concepto,
-            s.nombre as sucursal_nombre,
-            u.nombre as usuario_nombre
-        FROM procedimientos_menores p
-        LEFT JOIN sucursales s ON p.id_sucursal = s.id_sucursal
-        LEFT JOIN usuarios u ON p.id_usuario = u.id)
-    ) AS cobros_union
-    WHERE $whereSQL
+    SELECT
+        o.id_orden as id,
+        o.tipo_cobro as tipo,
+        c.nombre as nombre_cliente,
+        'Privado' as tipo_cliente,
+        o.tipo_cobro as tipo_pago,
+        o.monto,
+        'Efectivo' as metodo_pago,
+        LPAD(o.id_orden, 6, '0') as numero_ticket,
+        COALESCE(o.fecha_pago, o.fecha_creacion) as fecha,
+        o.descripcion as concepto,
+        (SELECT nombre FROM sucursales LIMIT 1) as sucursal_nombre,
+        '' as usuario_nombre
+    FROM ordenes_cobro o
+    JOIN clientes c ON o.id_cliente = c.id_cliente
+    WHERE DATE(COALESCE(o.fecha_pago, o.fecha_creacion)) BETWEEN ? AND ?
+      AND o.estado IN ('Pagado', 'Atendido')
     ORDER BY fecha DESC
 ";
 
@@ -89,7 +70,7 @@ $procedimientos = count(array_filter($cobros, fn($c) => $c['tipo'] === 'Procedim
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reportes de Cobros - Servimedic</title>
+    <title>Reportes de Cobros - CLINOVA</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -99,8 +80,8 @@ $procedimientos = count(array_filter($cobros, fn($c) => $c['tipo'] === 'Procedim
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
-            --color-orange: #FF6B35;
-            --color-blue: #4FC3F7;
+            --color-orange: #FF3D00;
+            --color-blue: #1FA8FF;
             --color-white: #FFFFFF;
             --color-text: #2D3748;
             --color-text-light: #718096;
@@ -116,7 +97,7 @@ $procedimientos = count(array_filter($cobros, fn($c) => $c['tipo'] === 'Procedim
         .back-btn:hover { background: linear-gradient(135deg, var(--color-orange), var(--color-blue)); color: white; border-color: transparent; }
         .page-title { font-size: 1.75rem; font-weight: 700; color: var(--color-text); }
         .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.625rem 1.25rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; border: none; text-decoration: none; }
-        .btn-primary { background: linear-gradient(135deg, var(--color-orange), #E85A2B); color: white; }
+        .btn-primary { background: linear-gradient(135deg, var(--color-orange), #E63400); color: white; }
         .btn-secondary { background: var(--color-text-light); color: white; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
         .stat-card { background: var(--color-white); padding: 1.25rem; border-radius: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
@@ -232,7 +213,7 @@ $procedimientos = count(array_filter($cobros, fn($c) => $c['tipo'] === 'Procedim
                             <th>Ticket</th>
                             <th>Fecha</th>
                             <th>Tipo</th>
-                            <th>Paciente</th>
+                            <th>Cliente</th>
                             <th>Concepto</th>
                             <th>Tipo Pago</th>
                             <th>Método</th>
@@ -246,7 +227,7 @@ $procedimientos = count(array_filter($cobros, fn($c) => $c['tipo'] === 'Procedim
                             <td><?php echo $c['numero_ticket']; ?></td>
                             <td><?php echo date('d/m/Y H:i', strtotime($c['fecha'])); ?></td>
                             <td><?php echo $c['tipo']; ?></td>
-                            <td><?php echo htmlspecialchars($c['nombre_paciente']); ?></td>
+                            <td><?php echo htmlspecialchars($c['nombre_cliente']); ?></td>
                             <td><?php echo htmlspecialchars($c['concepto']); ?></td>
                             <td><?php echo $c['tipo_pago']; ?></td>
                             <td><?php echo $c['metodo_pago']; ?></td>

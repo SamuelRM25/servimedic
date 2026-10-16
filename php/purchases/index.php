@@ -37,7 +37,7 @@ $userRole = $_SESSION['rol'] ?? '';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Compras - Servimedic</title>
+    <title>Compras - CLINOVA</title>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -55,12 +55,12 @@ $userRole = $_SESSION['rol'] ?? '';
         }
 
         :root {
-            --color-orange: #FF6B35;
-            --color-orange-light: #FF8C61;
-            --color-orange-dark: #E85A2B;
-            --color-blue: #4FC3F7;
-            --color-blue-light: #81D4FA;
-            --color-blue-dark: #0288D1;
+            --color-orange: #FF3D00;
+            --color-orange-light: #FF6E40;
+            --color-orange-dark: #E63400;
+            --color-blue: #1FA8FF;
+            --color-blue-light: #42B5FF;
+            --color-blue-dark: #0277BD;
             --color-white: #FFFFFF;
             --color-text: #2D3748;
             --color-text-light: #718096;

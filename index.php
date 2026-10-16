@@ -4,26 +4,29 @@ if(isset($_SESSION['user_id'])) {
     header("Location: php/dashboard/index.php");
     exit;
 }
-$page_title = "Login - Clínica";
+$page_title = "CLINOVA · Iniciar Sesión";
 include_once 'includes/header.php';
 ?>
 
 <!-- Google Fonts - Poppins para un look moderno -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/theme.css">
 
 <div class="login-wrapper">
     <div class="login-container">
         <!-- Logo -->
         <div class="logo-section">
-            <img src="assets/img/Servimedic.png" alt="Servimedic Logo" class="logo">
-            <h1 class="brand-title">Servimedic Familiar</h1>
+            <img src="assets/img/CLINOVA.png" alt="CLINOVA Logo" class="logo">
+            <h1 class="brand-title">CLINOVA</h1>
+            <div class="brand-tagline">Sistema de Gestión Clínica</div>
         </div>
 
         <!-- Login Card con Glassmorphism -->
         <div class="glass-card">
             <h2 class="welcome-text">Bienvenido</h2>
+            <p class="welcome-sub">Ingresa tus credenciales para continuar</p>
             
             <form id="loginForm" action="php/auth/login.php" method="POST">
                 <!-- Usuario Input -->
@@ -62,251 +65,252 @@ include_once 'includes/header.php';
 
         <!-- Footer -->
         <div class="footer-text">
-            © <?php echo date('Y'); ?> RS SOLUTION
+            © <?php echo date('Y'); ?> CLINOVA · Sistema de Gestión Clínica
         </div>
     </div>
 </div>
 
 <style>
-/* Reset y Variables */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+/* ============================================
+   CLINOVA · Login screen
+   On-brand dark theme matching the logo.
+   ============================================ */
 
-:root {
-    /* Colores Principales - Naranja y Celeste */
-    --color-orange: #FF6B35;
-    --color-orange-light: #FF8C61;
-    --color-orange-dark: #E85A2B;
-    --color-blue: #4FC3F7;
-    --color-blue-light: #81D4FA;
-    --color-blue-dark: #0288D1;
-    
-    /* Colores de Soporte */
-    --color-white: #FFFFFF;
-    --color-text-light: rgba(255, 255, 255, 0.95);
-    --color-text-muted: rgba(255, 255, 255, 0.7);
-    --color-error: #FF5252;
-    
-    /* Glassmorphism */
-    --glass-bg: rgba(255, 255, 255, 0.25);
-    --glass-border: rgba(255, 255, 255, 0.3);
-    
-    /* Sombras */
-    --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.1);
-    --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.15);
-    --shadow-lg: 0 15px 50px rgba(0, 0, 0, 0.2);
-    
-    /* Tipografía */
-    --font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-/* Body - Gradiente Animado Naranja a Celeste */
 body {
     font-family: var(--font-family);
     min-height: 100vh;
-    background: linear-gradient(-45deg, var(--color-orange), var(--color-orange-light), var(--color-blue), var(--color-blue-light));
-    background-size: 400% 400%;
-    animation: gradientShift 15s ease infinite;
+    background: var(--dark-bg);
+    color: var(--dark-text);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow-x: hidden;
+    position: relative;
 }
 
-/* Animación del Gradiente de Fondo */
-@keyframes gradientShift {
-    0% {
-        background-position: 0% 50%;
-    }
-    50% {
-        background-position: 100% 50%;
-    }
-    100% {
-        background-position: 0% 50%;
-    }
+/* Animated neon radial backdrop */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(900px 700px at 12% 18%, rgba(31, 168, 255, 0.22), transparent 60%),
+        radial-gradient(900px 700px at 88% 82%, rgba(255, 61, 0, 0.22), transparent 60%),
+        radial-gradient(600px 600px at 50% 50%, rgba(31, 168, 255, 0.06), transparent 70%);
+    animation: neonDrift 18s ease-in-out infinite alternate;
+    z-index: 0;
+    pointer-events: none;
 }
 
-/* Wrapper Principal */
+/* Subtle grid overlay */
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+    z-index: 0;
+    pointer-events: none;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+@keyframes neonDrift {
+    0%   { background-position: 0% 0%, 100% 100%, 50% 50%; }
+    50%  { background-position: 30% 20%, 70% 80%, 60% 40%; }
+    100% { background-position: 0% 0%, 100% 100%, 50% 50%; }
+}
+
+/* Layout */
 .login-wrapper {
+    position: relative;
+    z-index: 1;
     width: 100%;
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 2rem 1rem;
+    padding: var(--space-8) var(--space-4);
 }
 
-/* Container del Login */
 .login-container {
     width: 100%;
-    max-width: 420px;
-    animation: fadeInUp 0.8s ease-out;
+    max-width: 440px;
+    animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(30px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Logo Section */
+/* Logo section */
 .logo-section {
     text-align: center;
-    margin-bottom: 2.5rem;
+    margin-bottom: var(--space-8);
     animation: fadeIn 1s ease-out;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .logo {
-    width: 300px;
+    width: 320px;
     height: auto;
-    margin-bottom: 1rem;
-    /* Sombra que sigue la forma del logo */
-    filter: drop-shadow(0 8px 24px hsla(0, 0%, 100%, 0.35)) 
-            drop-shadow(0 4px 12px hsla(0, 0%, 100%, 0.25))
-            drop-shadow(0 2px 6px hsla(0, 0%, 100%, 0.2));
-    animation: floatLogo 3s ease-in-out infinite;
-    max-width: 200%;
+    max-width: 100%;
+    margin-bottom: var(--space-4);
+    /* Neon drop-shadow on the logo */
+    filter:
+        drop-shadow(0 0 24px rgba(31, 168, 255, 0.35))
+        drop-shadow(0 0 48px rgba(255, 61, 0, 0.25));
+    animation: floatLogo 4s ease-in-out infinite;
 }
 
 @keyframes floatLogo {
-    0%, 100% {
-        transform: translateY(0px);
-    }
-    50% {
-        transform: translateY(-10px);
-    }
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-8px); }
 }
 
 .brand-title {
-    font-size: 1.75rem;
-    font-weight: 600;
-    color: var(--color-white);
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    letter-spacing: -0.5px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: transparent;
+    background: linear-gradient(90deg, var(--color-blue-light), var(--color-orange-light));
+    -webkit-background-clip: text;
+    background-clip: text;
+    text-transform: uppercase;
 }
 
-/* Glass Card - Efecto Glassmorphism */
+.brand-tagline {
+    font-size: 0.75rem;
+    color: var(--dark-text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: var(--space-2);
+}
+
+/* Glass card */
 .glass-card {
-    background: var(--glass-bg);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-radius: 24px;
-    padding: 2.5rem 2rem;
+    background: rgba(17, 20, 24, 0.65);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border-radius: var(--radius-xl);
+    padding: var(--space-10) var(--space-6);
     border: 1px solid var(--glass-border);
-    box-shadow: var(--shadow-lg);
-    animation: scaleIn 0.6s ease-out 0.2s both;
+    box-shadow: var(--shadow-xl);
+    animation: scaleIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+    position: relative;
+    overflow: hidden;
+}
+
+.glass-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-blue), var(--color-orange), transparent);
+    opacity: 0.7;
 }
 
 @keyframes scaleIn {
-    from {
-        opacity: 0;
-        transform: scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
 }
 
 .welcome-text {
     font-size: 1.5rem;
     font-weight: 600;
-    color: var(--color-white);
-    margin-bottom: 2rem;
+    color: var(--dark-text);
+    margin-bottom: var(--space-2);
     text-align: center;
 }
 
-/* Input Wrapper - Material Design Style */
+.welcome-sub {
+    font-size: 0.875rem;
+    color: var(--dark-text-muted);
+    text-align: center;
+    margin-bottom: var(--space-8);
+}
+
+/* Inputs */
 .input-wrapper {
     position: relative;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-6);
 }
 
 .modern-input {
     width: 100%;
-    padding: 1rem 0 0.5rem;
+    padding: var(--space-4) 0 var(--space-2);
     font-size: 1rem;
-    color: var(--color-white);
+    color: var(--dark-text);
     background: transparent;
     border: none;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.12);
     outline: none;
     font-family: var(--font-family);
-    transition: all 0.3s ease;
+    transition: border-color var(--transition-base);
 }
 
-.modern-input::placeholder {
-    color: transparent;
-}
+.modern-input::placeholder { color: transparent; }
 
 .modern-input:-webkit-autofill,
 .modern-input:-webkit-autofill:hover,
 .modern-input:-webkit-autofill:focus {
-    -webkit-text-fill-color: var(--color-white);
+    -webkit-text-fill-color: var(--dark-text);
     -webkit-box-shadow: 0 0 0px 1000px transparent inset;
     transition: background-color 5000s ease-in-out 0s;
 }
 
-/* Floating Label */
 .floating-label {
     position: absolute;
     left: 0;
-    top: 1rem;
-    font-size: 1.125rem;  /* Más grande para mejor legibilidad */
-    color: var(--color-white);  /* Blanco para mejor visibilidad */
+    top: var(--space-4);
+    font-size: 1rem;
+    color: var(--dark-text-muted);
     pointer-events: none;
-    transition: all 0.3s ease;
-    font-weight: 500;  /* Semi-bold para más claridad */
+    transition: all var(--transition-base);
+    font-weight: 500;
 }
 
 .modern-input:focus ~ .floating-label,
 .modern-input:not(:placeholder-shown) ~ .floating-label {
     top: -0.5rem;
-    font-size: 0.875rem;  /* Tamaño cuando está flotando arriba */
-    color: var(--color-white);  /* Blanco cuando está activo */
-    font-weight: 600;  /* Bold cuando está activo */
+    font-size: 0.75rem;
+    color: var(--color-blue-light);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
 }
 
-/* Línea animada debajo del input */
 .input-line {
     position: absolute;
     bottom: 0;
     left: 0;
     width: 0;
     height: 2px;
-    background: linear-gradient(90deg, var(--color-orange), var(--color-blue));
-    transition: width 0.4s ease;
+    background: linear-gradient(90deg, var(--color-blue), var(--color-orange));
+    transition: width var(--transition-slow);
+    box-shadow: 0 0 12px rgba(31, 168, 255, 0.5);
 }
 
-.modern-input:focus ~ .input-line {
-    width: 100%;
-}
+.modern-input:focus ~ .input-line { width: 100%; }
 
-/* Error Message */
+/* Error message */
 .error-message {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    background: rgba(255, 82, 82, 0.15);
-    border: 1px solid rgba(255, 82, 82, 0.3);
-    border-radius: 12px;
-    color: var(--color-white);
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--radius-md);
+    color: #FCA5A5;
     font-size: 0.875rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
     animation: shakeX 0.5s ease;
 }
 
@@ -316,83 +320,71 @@ body {
     20%, 40%, 60%, 80% { transform: translateX(5px); }
 }
 
-.error-icon {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-}
+.error-icon { width: 20px; height: 20px; flex-shrink: 0; }
 
-/* Login Button - Gradiente Naranja */
+/* Login button */
 .login-button {
     width: 100%;
-    padding: 1rem;
-    margin-top: 1rem;
+    padding: var(--space-4);
+    margin-top: var(--space-2);
     font-size: 1rem;
     font-weight: 600;
     color: var(--color-white);
     background: linear-gradient(135deg, var(--color-orange), var(--color-orange-dark));
     border: none;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    box-shadow: 0 4px 15px rgba(255, 107, 53, 0.4);
-    transition: all 0.3s ease;
+    gap: var(--space-2);
+    box-shadow: 0 8px 24px rgba(255, 61, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    transition: transform var(--transition-base), box-shadow var(--transition-base);
     font-family: var(--font-family);
     position: relative;
     overflow: hidden;
+    letter-spacing: 0.3px;
 }
 
 .login-button::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: -100%;
+    top: 0; left: -100%;
     width: 100%;
     height: 100%;
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
     transition: left 0.5s ease;
 }
 
-.login-button:hover::before {
-    left: 100%;
-}
+.login-button:hover::before { left: 100%; }
 
 .login-button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 25px rgba(255, 107, 53, 0.5);
+    box-shadow: 0 12px 32px rgba(255, 61, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
-.login-button:active {
-    transform: translateY(0);
-}
+.login-button:active { transform: translateY(0); }
 
 .button-icon {
     width: 20px;
     height: 20px;
-    transition: transform 0.3s ease;
+    transition: transform var(--transition-base);
 }
 
-.login-button:hover .button-icon {
-    transform: translateX(4px);
-}
+.login-button:hover .button-icon { transform: translateX(4px); }
 
-/* Footer Text */
+/* Footer */
 .footer-text {
     text-align: center;
-    margin-top: 2rem;
-    color: var(--color-text-muted);
-    font-size: 0.875rem;
-    font-weight: 300;
+    margin-top: var(--space-8);
+    color: var(--dark-text-muted);
+    font-size: 0.8125rem;
+    font-weight: 400;
+    letter-spacing: 0.5px;
 }
 
-/* Loading State */
-.login-button.loading {
-    pointer-events: none;
-    opacity: 0.7;
-}
+/* Loading state */
+.login-button.loading { pointer-events: none; opacity: 0.8; }
 
 .login-button.loading .button-text::after {
     content: '';
@@ -406,57 +398,21 @@ body {
     animation: spin 0.6s linear infinite;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-/* Responsive Design */
+/* Responsive */
 @media (max-width: 480px) {
-    .login-container {
-        max-width: 100%;
-    }
-    
-    .glass-card {
-        padding: 2rem 1.5rem;
-        border-radius: 20px;
-    }
-    
-    .brand-title {
-        font-size: 1.5rem;
-    }
-    
-    .welcome-text {
-        font-size: 1.25rem;
-    }
-    
-    .logo {
-        width: 250px;
-    }
+    .login-container { max-width: 100%; }
+    .glass-card { padding: var(--space-8) var(--space-5); border-radius: var(--radius-lg); }
+    .brand-title { font-size: 1.25rem; }
+    .welcome-text { font-size: 1.25rem; }
+    .logo { width: 260px; }
 }
 
 @media (max-width: 360px) {
-    .glass-card {
-        padding: 1.5rem 1.25rem;
-    }
-    
-    .brand-title {
-        font-size: 1.25rem;
-    }
-    
-    .logo {
-        width: 250px;
-    }
-}
-
-/* Prefer Reduced Motion */
-@media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-    }
+    .glass-card { padding: var(--space-6) var(--space-4); }
+    .brand-title { font-size: 1.1rem; letter-spacing: 3px; }
+    .logo { width: 220px; }
 }
 </style>
 

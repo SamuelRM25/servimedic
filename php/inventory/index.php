@@ -78,7 +78,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventario - Servimedic</title>
+    <title>Inventario - CLINOVA</title>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -96,12 +96,12 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
         }
 
         :root {
-            --color-orange: #FF6B35;
-            --color-orange-light: #FF8C61;
-            --color-orange-dark: #E85A2B;
-            --color-blue: #4FC3F7;
-            --color-blue-light: #81D4FA;
-            --color-blue-dark: #0288D1;
+            --color-orange: #FF3D00;
+            --color-orange-light: #FF6E40;
+            --color-orange-dark: #E63400;
+            --color-blue: #1FA8FF;
+            --color-blue-light: #42B5FF;
+            --color-blue-dark: #0277BD;
             --color-white: #FFFFFF;
             --color-text: #2D3748;
             --color-text-light: #718096;
@@ -1033,9 +1033,20 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                         <input type="text" name="codigo_barras" id="codigo_barras" class="form-control" placeholder="Escanear o escribir código..." autofocus>
                     </div>
 
+                    <div class="form-group mb-3">
+                        <label class="form-label" style="display:flex; justify-content:space-between;">
+                            Código de Referencia
+                            <small class="text-muted">Código manual (único)</small>
+                        </label>
+                        <input type="text" name="codigo_referencia" id="codigo_referencia" class="form-control" placeholder="Ej: FA-001" maxlength="20">
+                        <small class="text-muted">Déjelo vacío si no aplica. Se auto-completa al elegir un medicamento existente.</small>
+                    </div>
+
                     <div class="form-group">
                         <label class="form-label">Nombre Comercial *</label>
-                        <input type="text" name="nom_medicamento" id="nom_medicamento" class="form-control" required>
+                        <input type="text" name="nom_medicamento" id="nom_medicamento" class="form-control" list="medSuggest" autocomplete="off" required>
+                        <datalist id="medSuggest"></datalist>
+                        <small class="text-muted">Si el medicamento ya tiene historial, elija la sugerencia para auto-completar los códigos.</small>
                     </div>
                     
                     <div class="form-row">
@@ -1144,7 +1155,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             <form action="transfer_product.php" method="POST">
                 <input type="hidden" name="id_inventario" id="transfer_id">
                 <div class="modal-body">
-                    <div class="alert alert-info" style="background: #ebf8ff; border-left: 4px solid #4299e1; padding: 10px; font-size: 0.9rem;">
+                    <div class="alert alert-info" style="background: #ebf8ff; border-left: 4px solid #1FA8FF; padding: 10px; font-size: 0.9rem;">
                         <i class="bi bi-info-circle"></i> El estado cambiará a <strong>"En Traslado"</strong> y deberá ser recibido en la sucursal de destino.
                     </div>
                     
@@ -1257,6 +1268,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                 const data = JSON.parse(this.dataset.med);
                 document.getElementById('id_inventario').value = data.id_inventario;
                 document.getElementById('codigo_barras').value = data.codigo_barras || '';
+                document.getElementById('codigo_referencia').value = data.codigo_referencia || '';
                 document.getElementById('nom_medicamento').value = data.nom_medicamento;
                 document.getElementById('mol_medicamento').value = data.mol_medicamento;
                 document.getElementById('presentacion_med').value = data.presentacion_med;
@@ -1279,6 +1291,67 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                 }
             });
         });
+
+        // Autocompletar códigos por historial de medicamentos
+        const medSuggestCache = {};
+        const nomMedInput = document.getElementById('nom_medicamento');
+        const datalistMed = document.getElementById('medSuggest');
+        let medSuggestTimer = null;
+
+        nomMedInput.addEventListener('input', function() {
+            const q = this.value.trim();
+            if (q.length < 3) { datalistMed.innerHTML = ''; return; }
+            if (medSuggestCache[q]) { renderMedSuggest(medSuggestCache[q]); return; }
+            clearTimeout(medSuggestTimer);
+            medSuggestTimer = setTimeout(() => fetchMedSuggest(q), 250);
+        });
+
+        nomMedInput.addEventListener('change', function() {
+            const match = findSuggestMatch(this.value);
+            if (match) {
+                if (match.codigo_referencia && !document.getElementById('codigo_referencia').value) {
+                    document.getElementById('codigo_referencia').value = match.codigo_referencia;
+                }
+                if (match.codigo_barras && !document.getElementById('codigo_barras').value) {
+                    document.getElementById('codigo_barras').value = match.codigo_barras;
+                }
+            }
+        });
+
+        function findSuggestMatch(name) {
+            for (const key in medSuggestCache) {
+                const list = medSuggestCache[key];
+                if (Array.isArray(list)) {
+                    const found = list.find(i => i.nom_medicamento === name);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
+        function fetchMedSuggest(q) {
+            fetch('search_by_name.php?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(rows => {
+                    medSuggestCache[q] = rows;
+                    renderMedSuggest(rows);
+                })
+                .catch(() => {});
+        }
+
+        function renderMedSuggest(rows) {
+            datalistMed.innerHTML = rows.map(r =>
+                '<option value="' + escapeHtml(r.nom_medicamento) + '">' +
+                escapeHtml((r.codigo_referencia || r.codigo_barras || '') + ' - ' + (r.mol_medicamento || '')) +
+                '</option>'
+            ).join('');
+        }
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+                {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+            ));
+        }
 
         // Search functionality
         document.getElementById('searchInput').addEventListener('input', function() {

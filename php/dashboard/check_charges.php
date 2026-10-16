@@ -19,9 +19,9 @@ try {
 
     // 2. Get Data for HTML
     $stmt = $conn->query("
-        SELECT o.*, p.nombre as nombre_paciente, p.apellido as apellido_paciente
+        SELECT o.*, c.nombre as nombre_cliente
         FROM ordenes_cobro o
-        JOIN pacientes p ON o.id_paciente = p.id_paciente
+        JOIN clientes c ON o.id_cliente = c.id_cliente
         WHERE o.estado = 'Pendiente'
         ORDER BY o.fecha_creacion DESC
     ");
@@ -43,11 +43,11 @@ try {
                     Q' . number_format($cobro['monto'], 2) . '
                 </div>
                 <div class="queue-details">
-                    <h4>' . htmlspecialchars($cobro['nombre_paciente'] . ' ' . $cobro['apellido_paciente']) . '</h4>
+                    <h4>' . htmlspecialchars($cobro['nombre_cliente']) . '</h4>
                     <p>' . htmlspecialchars($cobro['tipo_cobro']) . '</p>
                 </div>
                 <div class="queue-status">
-                    <button class="btn btn-primary" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;" 
+                    <button class="btn btn-primary" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;"
                             onclick="processCharge(' . $cobro['id_orden'] . ')">
                         Realizar Cobro
                     </button>

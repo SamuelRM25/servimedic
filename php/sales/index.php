@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../../config/database.php';
+require_once '../../includes/functions.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../../index.php");
@@ -37,7 +38,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ventas - Servimedic</title>
+    <title>Ventas - CLINOVA</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -52,8 +53,8 @@ try {
         }
 
         :root {
-            --color-orange: #FF6B35;
-            --color-blue: #4FC3F7;
+            --color-orange: #FF3D00;
+            --color-blue: #1FA8FF;
             --color-white: #FFFFFF;
             --color-text: #2D3748;
             --color-text-light: #718096;
@@ -388,7 +389,6 @@ try {
                             <th>Tipo Venta</th>
                             <th>Pago</th>
                             <th>Subtotal</th>
-                            <th>Descuento</th>
                             <th>Total</th>
                             <th>Estado</th>
                             <th>Usuario</th>
@@ -398,7 +398,7 @@ try {
                         <?php foreach ($ventas as $venta): ?>
                         <tr>
                             <td><?php echo $venta['id_venta']; ?></td>
-                            <td><?php echo date('d/m/Y H:i', strtotime($venta['fecha_venta'])); ?></td>
+                            <td><?php echo fechaGT($venta['fecha_venta'], 'd/m/Y H:i'); ?></td>
                             <td>
                                 <strong><?php echo htmlspecialchars($venta['cliente_nombre']); ?></strong>
                                 <?php if ($venta['venta_personal']): ?>
@@ -431,7 +431,6 @@ try {
                                 </span>
                             </td>
                             <td>Q<?php echo number_format($venta['total'], 2); ?></td>
-                            <td><?php echo $venta['descuento'] > 0 ? 'Q' . number_format($venta['descuento'], 2) : '-'; ?></td>
                             <td><strong>Q<?php echo number_format($venta['total_final'], 2); ?></strong></td>
                             <td>
                                 <?php 
@@ -468,7 +467,7 @@ try {
             tableRows.forEach(row => {
                 const cliente = row.cells[2].textContent.toLowerCase();
                 const nit = row.cells[3].textContent.toLowerCase();
-                const usuario = row.cells[11].textContent.toLowerCase();
+                const usuario = row.cells[10].textContent.toLowerCase();
 
                 const matches = cliente.includes(searchTerm) ||
                                nit.includes(searchTerm) ||

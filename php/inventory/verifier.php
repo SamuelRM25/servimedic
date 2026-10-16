@@ -14,7 +14,7 @@ if (!isset($_SESSION['user_id'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verificador de Precios - Servimedic</title>
+    <title>Verificador de Precios - CLINOVA</title>
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -79,7 +79,7 @@ if (!isset($_SESSION['user_id'])) {
         }
         
         .scanner-input:focus {
-            border-color: #4299e1;
+            border-color: #1FA8FF;
             box-shadow: 0 0 0 5px rgba(66, 153, 225, 0.2);
         }
         
@@ -158,7 +158,7 @@ if (!isset($_SESSION['user_id'])) {
         }
         
         .info-value.price { color: #48bb78; font-size: 1.8rem; }
-        .info-value.stock { color: #4299e1; }
+        .info-value.stock { color: #1FA8FF; }
         
         .alert-box {
             padding: 20px;

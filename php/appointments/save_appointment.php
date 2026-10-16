@@ -27,12 +27,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id_medico = $_POST['id_medico'] ?? $_SESSION['user_id'] ?? 0;
         
         // Verificar si el paciente ya existe (por nombre y apellido)
-        $stmt = $conn->prepare("SELECT id_paciente FROM pacientes WHERE nombre = ? AND apellido = ?");
+        $stmt = $conn->prepare("SELECT id_cliente FROM clientes WHERE nombre = ? AND apellido = ?");
         $stmt->execute([$_POST['nombre_pac'], $_POST['apellido_pac']]);
         $paciente = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($paciente) {
-            $id_paciente = $paciente['id_paciente'];
+            $id_cliente = $paciente["id_cliente"];
         } else {
             // Si no existe, crear un nuevo paciente temporal
             $stmt = $conn->prepare("
@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 VALUES (?, ?, '2000-01-01', 'Masculino', ?)
             ");
             $stmt->execute([$_POST['nombre_pac'], $_POST['apellido_pac'], $id_medico]);
-            $id_paciente = $conn->lastInsertId();
+            $id_cliente = $conn->lastInsertId();
         }
         
         // Prepare SQL statement
@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bindParam(':hora_cita', $_POST['hora_cita']);
         $stmt->bindParam(':telefono', $_POST['telefono']);
         $stmt->bindParam(':id_medico', $id_medico);
-        $stmt->bindParam(':id_paciente', $id_paciente);
+        $stmt->bindParam(':id_paciente', $id_cliente);
         
         // Execute the statement
         if ($stmt->execute()) {

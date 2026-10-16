@@ -31,19 +31,19 @@ try {
 
     // 0.5 Fetch All Patients for Dropdown (Optimized for name only)
     try {
-        $stmtPacientes = $conn->query("SELECT id_paciente, nombre, apellido FROM pacientes ORDER BY nombre ASC");
-        $stmtPacientes->execute();
-        $pacientes = $stmtPacientes->fetchAll(PDO::FETCH_ASSOC);
+        $stmtClientes = $conn->query("SELECT id_cliente, nombre FROM clientes ORDER BY nombre ASC");
+        $stmtClientes->execute();
+        $clientes = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
-        $pacientes = [];
+        $clientes = [];
     }
 
     // 1. Turnos (Citas de hoy) - This section is now effectively replaced by Pending Charges for display
     // 4. Check Pending Charges
     $stmtCobros = $conn->prepare("
-        SELECT o.*, p.nombre as nombre_paciente, p.apellido as apellido_paciente, u.nombre as doctor_nombre
+        SELECT o.*, c.nombre as nombre_cliente, u.nombre as doctor_nombre
         FROM ordenes_cobro o
-        JOIN pacientes p ON o.id_paciente = p.id_paciente
+        JOIN clientes c ON o.id_cliente = c.id_cliente
         LEFT JOIN usuarios u ON o.id_medico = u.id
         WHERE o.estado = 'Pendiente'
         ORDER BY o.fecha_creacion ASC
@@ -51,11 +51,11 @@ try {
     $stmtCobros->execute();
     $cobrosPendientes = $stmtCobros->fetchAll(PDO::FETCH_ASSOC);
 
-    // 5. Pharmacy Queue (Pacientes enviados a Farmacia)
+    // 5. Pharmacy Queue (Clientes enviados a Farmacia)
     $stmtFarmacia = $conn->query("
-        SELECT o.*, p.nombre as nombre_paciente, p.apellido as apellido_paciente
+        SELECT o.*, c.nombre as nombre_cliente
         FROM ordenes_cobro o
-        JOIN pacientes p ON o.id_paciente = p.id_paciente
+        JOIN clientes c ON o.id_cliente = c.id_cliente
         WHERE o.necesita_farmacia = 1
         AND o.estado IN ('Pagado', 'Atendido')
         AND o.fecha_pago >= CURDATE()
@@ -125,15 +125,18 @@ try {
     $stmt = $conn->query("SELECT COUNT(*) FROM inventario WHERE cantidad_med < 20");
     $lowStockCount = $stmt->fetchColumn();
 
-    // Pacientes en espera (Turnos restantes hoy)
-    // This now refers to the count of pending charges
+    // Pedidos en el mes
+    $stmt = $conn->query("SELECT COUNT(*) FROM pedidos WHERE YEAR(fecha_pedido) = YEAR(CURDATE()) AND MONTH(fecha_pedido) = MONTH(CURDATE())");
+    $pedidosMesCount = (int) $stmt->fetchColumn();
+
+    // Cobros pendientes (for the queue)
     $waitingCount = count($cobrosPendientes);
 
     // 3. Cobros Pendientes (This section is now handled by $cobrosPendientes above)
     // Ensure table exists first (just in case)
     $conn->exec("CREATE TABLE IF NOT EXISTS `ordenes_cobro` (
       `id_orden` int(11) NOT NULL AUTO_INCREMENT,
-      `id_paciente` int(11) NOT NULL,
+      `id_cliente` int(11) NOT NULL,
       `id_medico` int(11) NOT NULL,
       `monto` decimal(10,2) NOT NULL,
       `tipo_cobro` enum('Consulta','Procedimiento','Examen','Otro') NOT NULL,
@@ -142,16 +145,16 @@ try {
       `fecha_creacion` timestamp NOT NULL DEFAULT current_timestamp(),
       `fecha_pago` timestamp NULL DEFAULT NULL,
       PRIMARY KEY (`id_orden`),
-      KEY `fk_orden_paciente` (`id_paciente`),
+      KEY `fk_orden_cliente` (`id_cliente`),
       KEY `fk_orden_medico` (`id_medico`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;");
 
     // The original query for cobrosPendientes is now replaced by $stmtCobros above.
     // This block is kept for table creation, but the fetch is moved.
     // $stmt = $conn->query("
-    //     SELECT o.*, p.nombre as nombre_paciente, p.apellido as apellido_paciente
+    //     SELECT o.*, c.nombre as nombre_cliente
     //     FROM ordenes_cobro o
-    //     JOIN pacientes p ON o.id_paciente = p.id_paciente
+    //     JOIN clientes c ON o.id_cliente = c.id_cliente
     //     WHERE o.estado = 'Pendiente'
     //     ORDER BY o.fecha_creacion DESC
     // ");
@@ -168,6 +171,7 @@ try {
     $turnos = []; // Keep this for compatibility if needed elsewhere, though it's not used in the dashboard queue anymore
     $expiringCount = 0;
     $lowStockCount = 0;
+    $pedidosMesCount = 0;
     $waitingCount = 0;
     $cobrosPendientes = [];
     $farmaciaQueue = [];
@@ -175,7 +179,7 @@ try {
     $transferenciasEntrantes = [];
     // Ensure doctores is defined if main try fails
     if (!isset($doctores)) { $doctores = []; }
-    if (!isset($pacientes)) { $pacientes = []; }
+    if (!isset($clientes)) { $clientes = []; }
 }
 ?>
 
@@ -184,7 +188,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Servimedic</title>
+    <title>Dashboard - CLINOVA</title>
     
     <!-- Google Fonts - Poppins -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -203,12 +207,12 @@ try {
 
         :root {
             /* Colores - Naranja y Celeste */
-            --color-orange: #FF6B35;
-            --color-orange-light: #FF8C61;
-            --color-orange-dark: #E85A2B;
-            --color-blue: #4FC3F7;
-            --color-blue-light: #81D4FA;
-            --color-blue-dark: #0288D1;
+            --color-orange: #FF3D00;
+            --color-orange-light: #FF6E40;
+            --color-orange-dark: #E63400;
+            --color-blue: #1FA8FF;
+            --color-blue-light: #42B5FF;
+            --color-blue-dark: #0277BD;
             
             /* Colores de soporte */
             --color-white: #FFFFFF;
@@ -782,9 +786,9 @@ try {
         <div style="margin-bottom: 2rem;">
             <?php if (!empty($transferenciasEntrantes)): ?>
                 <?php foreach ($transferenciasEntrantes as $trans): ?>
-                <div style="background: #EBF8FF; border-left: 5px solid #4299E1; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <div style="background: #EBF8FF; border-left: 5px solid #1FA8FF; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <div style="display: flex; align-items: center; gap: 1rem;">
-                        <div style="background: #4299E1; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <div style="background: #1FA8FF; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
                             <i class="bi bi-truck"></i>
                         </div>
                         <div>
@@ -1035,7 +1039,7 @@ try {
             <div class="sidebar-header">
                 <div class="sidebar-logo">
                     <i class="bi bi-hospital"></i>
-                    <span>Servimedic</span>
+                    <span>CLINOVA</span>
                 </div>
                 <div class="sidebar-role">Sistema de Gestión</div>
             </div>
@@ -1074,26 +1078,14 @@ try {
 
                     <?php if (in_array($rol_usuario, ['Administrador', 'Doctor'])): ?>
                     <li class="nav-item">
-                        <a href="../patients/index.php" class="nav-link">
+                        <a href="../clientes/index.php" class="nav-link">
                             <i class="bi bi-people"></i>
-                            <span>Pacientes</span>
+                            <span>Clientes</span>
                         </a>
                     </li>
                     <?php endif; ?>
 
                     <?php if (in_array($rol_usuario, ['Administrador', 'Farmacia'])): ?>
-                    <li class="nav-item">
-                        <a href="../examinations/index.php" class="nav-link">
-                            <i class="bi bi-file-earmark-medical"></i>
-                            <span>Exámenes</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="../minor_procedures/index.php" class="nav-link">
-                            <i class="bi bi-bandaid"></i>
-                            <span>Procedimientos Menores</span>
-                        </a>
-                    </li>
                     <?php endif; ?>
 
                     <?php if ($rol_usuario === 'Administrador'): ?>
@@ -1163,11 +1155,11 @@ try {
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
                 <?php if (in_array($rol_usuario, ['Administrador', 'Mayoreo', 'Farmacia', 'Doctor'])): ?>
                 <div style="display: flex; gap: 10px;">
-                    <button class="btn-new-patient" onclick="openNewPatientModal()">
+                    <button class="btn-new-patient" onclick="openNewClienteModal()">
                         <div class="icon-wrapper">
                             <i class="bi bi-person-plus-fill"></i>
                         </div>
-                        <span>Nuevo Paciente</span>
+                        <span>Nuevo Cliente</span>
                     </button>
                     <button class="btn-new-patient" onclick="openManualChargeModal()" style="background: linear-gradient(135deg, var(--color-blue), var(--color-blue-dark));">
                         <div class="icon-wrapper">
@@ -1196,12 +1188,12 @@ try {
                     <div class="queue-container">
                         <div class="queue-list">
                             <?php foreach ($farmaciaQueue as $fq): ?>
-                            <div class="queue-card" onclick="openPharmacyModal(<?php echo $fq['id_orden']; ?>, '<?php echo htmlspecialchars($fq['nombre_paciente'] . ' ' . $fq['apellido_paciente']); ?>')">
+                            <div class="queue-card" onclick="openPharmacyModal(<?php echo $fq['id_orden']; ?>, '<?php echo htmlspecialchars($fq['nombre_cliente']); ?>')">
                                 <div class="queue-time">
                                     <?php echo date('H:i', strtotime($fq['fecha_pago'])); ?>
                                 </div>
                                 <div class="queue-details">
-                                    <h4><?php echo htmlspecialchars($fq['nombre_paciente'] . ' ' . $fq['apellido_paciente']); ?></h4>
+                                    <h4><?php echo htmlspecialchars($fq['nombre_cliente']); ?></h4>
                                     <p><i class="bi bi-prescription"></i> Ver Receta</p>
                                 </div>
                                 <div class="queue-status">
@@ -1236,7 +1228,7 @@ try {
                                     <?php echo date('g:i A', strtotime($cobro['fecha_creacion'])); ?>
                                 </div>
                                 <div class="queue-details">
-                                    <h4><?php echo htmlspecialchars($cobro['nombre_paciente'] . ' ' . $cobro['apellido_paciente']); ?></h4>
+                                    <h4><?php echo htmlspecialchars($cobro['nombre_cliente']); ?></h4>
                                     <p><i class="bi bi-person-badge"></i> Dr. <?php echo htmlspecialchars($cobro['doctor_nombre'] ?? 'No asignado'); ?></p>
                                     <p><i class="bi bi-tag"></i> <?php echo htmlspecialchars($cobro['tipo_cobro']); ?> - Q<?php echo number_format($cobro['monto'], 2); ?></p>
                                 </div>
@@ -1277,138 +1269,47 @@ try {
 
                     <div class="stat-widget info">
                         <div class="widget-icon">
-                            <i class="bi bi-people-fill"></i>
+                            <i class="bi bi-clipboard-check-fill"></i>
                         </div>
                         <div class="widget-content">
-                            <div class="widget-value"><?php echo $waitingCount; ?></div>
-                            <div class="widget-label">Pacientes en Espera</div>
-                            <div class="widget-sub">Cobros pendientes hoy</div>
+                            <div class="widget-value"><?php echo $pedidosMesCount; ?></div>
+                            <div class="widget-label">Pedidos en el mes</div>
+                            <div class="widget-sub"><?php echo date('F Y'); ?></div>
                         </div>
-                    </div>                    
+                    </div>
                 </div>
             </div>
         </main>
     </div>
-    <!-- New Patient Modal -->
-    <div class="modal-overlay" id="newPatientModal">
-        <div class="modal" style="max-width: 900px;">
+    <!-- New Cliente Modal -->
+    <div class="modal-overlay" id="newClienteModal">
+        <div class="modal" style="max-width: 520px;">
             <div class="modal-header">
-                <h2 class="modal-title">Nuevo Paciente - Admisión y Anamnesis</h2>
-                <button class="modal-close" onclick="closeModal('newPatientModal')">
+                <h2 class="modal-title">Nuevo Cliente</h2>
+                <button class="modal-close" onclick="closeModal('newClienteModal')">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
-            <form id="newPatientForm" onsubmit="submitPatientForm(event)">
-                <input type="hidden" name="ajax" value="1">
+            <form id="newClienteForm" onsubmit="submitClienteForm(event)">
                 <div class="modal-body">
-                    <!-- Tabs -->
-                    <ul class="nav nav-tabs mb-3" id="patientTabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic" type="button" role="tab">Información Principal</button>
-                        </li>
-                    </ul>
-
-                    <div class="tab-content" id="patientTabsContent">
-                        <!-- Basic Info Tab -->
-                        <div class="tab-pane fade show active" id="basic" role="tabpanel">
-                            <div class="section-title">Información Personal</div>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">Nombre *</label>
-                                    <input type="text" name="nombre" class="form-control" placeholder="Ej: Juan Carlos" required>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Apellido *</label>
-                                    <input type="text" name="apellido" class="form-control" placeholder="Ej: Pérez López" required>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Fecha Nacimiento *</label>
-                                    <input type="date" name="fecha_nacimiento" class="form-control" required>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Género *</label>
-                                    <select name="genero" class="form-control" required>
-                                        <option value="Masculino">Masculino</option>
-                                        <option value="Femenino">Femenino</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label" style="color: var(--color-blue-dark);"><i class="bi bi-person-fill-add"></i> Doctor Asignado</label>
-                                    <select name="id_medico" class="form-control" style="border-color: var(--color-blue-light); background-color: #EBF8FF;">
-                                        <option value="">-- Seleccionar Doctor --</option>
-                                        <?php if(empty($doctores)): ?>
-                                        <option value="" disabled>No hay doctores disponibles</option>
-                                        <?php endif; ?>
-                                        <?php foreach ($doctores as $doctor): ?>
-                                        <option value="<?php echo $doctor['id']; ?>">
-                                            Dr. <?php echo htmlspecialchars($doctor['nombre'] . ' ' . $doctor['apellido']); ?>
-                                        </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">DPI/Cédula</label>
-                                    <input type="text" name="dpi" class="form-control" placeholder="0000 00000 0000">
-                                </div>
-                            </div>
-
-                            <div class="section-title">Contacto y Dirección</div>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">Teléfono</label>
-                                    <input type="text" name="telefono" class="form-control" placeholder="Ej: 5555-5555">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Correo Electrónico</label>
-                                    <input type="email" name="correo" class="form-control" placeholder="ejemplo@correo.com">
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label">Dirección Completa</label>
-                                    <input type="text" name="direccion" class="form-control" placeholder="Dirección de residencia">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Tipo Paciente</label>
-                                    <select name="tipo_paciente" class="form-control">
-                                        <option value="Privado">Privado</option>
-                                        <option value="IGS">IGS</option>
-                                        <option value="EPSS">EPSS</option>
-                                        <option value="Mawdy">Mawdy</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div class="section-title">En Caso de Emergencia</div>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">Nombre Responsable</label>
-                                    <input type="text" name="contacto_emergencia_nombre" class="form-control" placeholder="Nombre del familiar">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Teléfono Responsable</label>
-                                    <input type="text" name="contacto_emergencia_telefono" class="form-control" placeholder="Teléfono de contacto">
-                                </div>
-                            </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">Nombre *</label>
+                            <input type="text" name="nombre" class="form-control" placeholder="Nombre completo del cliente" required maxlength="150" autocomplete="off">
                         </div>
-
-                        <!-- Anamnesis Tab -->
-                        <div class="tab-pane fade" id="anamnesis" role="tabpanel">
-                            <div class="section-title">Consulta Actual</div>
-                            <div class="row g-3 mb-4">
-                                <div class="col-12">
-                                    <label class="form-label">Motivo de Consulta *</label>
-                                    <textarea name="motivo_consulta" class="form-control" rows="2" placeholder="¿Por qué acude el paciente hoy?" required></textarea>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label">Síntomas Detallados</label>
-                                    <textarea name="sintomas" class="form-control" rows="3" placeholder="Descripción detallada de los síntomas..."></textarea>
-                                </div>
-                            </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Teléfono</label>
+                            <input type="text" name="telefono" class="form-control" placeholder="0000-0000" maxlength="20" inputmode="tel" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Dirección</label>
+                            <input type="text" name="direccion" class="form-control" placeholder="Dirección" maxlength="255" autocomplete="off">
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('newPatientModal')">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Guardar Paciente</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('newClienteModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Cliente</button>
                 </div>
             </form>
         </div>
@@ -1417,7 +1318,7 @@ try {
     <!-- Manual Charge Modal -->
     <div class="modal-overlay" id="manualChargeModal">
         <div class="modal" style="max-width: 550px; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
-            <div class="modal-header" style="background: linear-gradient(135deg, #FF6B35 0%, #FF8C61 100%); padding: 25px 30px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #FF3D00 0%, #FF6E40 100%); padding: 25px 30px;">
                 <div>
                     <h2 class="modal-title" style="margin: 0; font-size: 1.6rem; color: white; font-weight: 700;">Cobro Directo</h2>
                     <p style="margin: 5px 0 0; font-size: 0.95rem; opacity: 0.9; color: rgba(255,255,255,0.9); font-weight: 400;">Registrar pago y pase a espera</p>
@@ -1439,14 +1340,14 @@ try {
                             padding: 2px;
                         }
                         .premium-input-group:focus-within {
-                            border-color: #FF6B35;
+                            border-color: #FF3D00;
                             box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
                             transform: translateY(-1px);
                         }
                         .premium-input-group .input-group-text {
                             background: transparent;
                             border: none;
-                            color: #FF6B35;
+                            color: #FF3D00;
                             padding: 10px 0 10px 15px; /* Adjust padding */
                             font-size: 1.1rem;
                         }
@@ -1485,7 +1386,7 @@ try {
                             color: #2d3436;
                         }
                         .btn-submit {
-                            background: linear-gradient(135deg, #FF6B35 0%, #E85A2B 100%);
+                            background: linear-gradient(135deg, #FF3D00 0%, #E63400 100%);
                             color: white;
                             box-shadow: 0 4px 12px rgba(232, 90, 43, 0.25);
                         }
@@ -1496,14 +1397,14 @@ try {
                     </style>
                     <div class="row g-4">
                         <div class="col-12">
-                            <label class="premium-label">Paciente</label>
+                            <label class="premium-label">Cliente</label>
                             <div class="input-group premium-input-group">
                                 <span class="input-group-text"><i class="bi bi-person"></i></span>
-                                <select name="id_paciente" class="form-select" required>
-                                    <option value="">Seleccionar Paciente...</option>
-                                    <?php foreach ($pacientes as $paciente): ?>
-                                    <option value="<?php echo $paciente['id_paciente']; ?>">
-                                        <?php echo htmlspecialchars($paciente['nombre'] . ' ' . $paciente['apellido']); ?>
+                                <select name="id_cliente" class="form-select" required>
+                                    <option value="">Seleccionar Cliente...</option>
+                                    <?php foreach ($clientes as $cliente): ?>
+                                    <option value="<?php echo $cliente["id_cliente"]; ?>">
+                                        <?php echo htmlspecialchars($cliente["nombre"]); ?>
                                     </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -1573,7 +1474,7 @@ try {
             </div>
             <div class="modal-body p-0">
                 <div class="p-4 bg-light border-bottom">
-                    <h5 class="text-primary mb-0" id="pharmPatientName">Paciente...</h5>
+                    <h5 class="text-primary mb-0" id="pharmClientName">Cliente...</h5>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover mb-0" id="pharmacyTable">
@@ -1589,7 +1490,7 @@ try {
             <div class="modal-body p-0">
                 <div class="p-4 border-bottom text-center" style="background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); color: white;">
                     <div style="font-size: 3rem; margin-bottom: 0.5rem;"><i class="bi bi-capsule"></i></div>
-                    <h4 id="pharmPatientName" style="font-weight: 700; margin:0; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">Paciente...</h4>
+                    <h4 id="pharmClientName" style="font-weight: 700; margin:0; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">Cliente...</h4>
                     <p style="margin:0; opacity: 0.9;">Revisión de Medicamentos</p>
                 </div>
                 <div class="table-responsive">
@@ -1625,8 +1526,8 @@ try {
 
     <script src="../../assets/js/ticket_printer.js"></script>
     <script>
-        function openNewPatientModal() {
-            document.getElementById('newPatientModal').classList.add('show');
+        function openNewClienteModal() {
+            document.getElementById('newClienteModal').classList.add('show');
         }
 
         function closeModal(modalId) {
@@ -1642,7 +1543,7 @@ try {
             });
         });
 
-        function submitPatientForm(e) {
+        function submitClienteForm(e) {
             e.preventDefault();
             const form = e.target;
             const formData = new FormData(form);
@@ -1657,7 +1558,7 @@ try {
                 }
             });
 
-            fetch('../patients/save_patient.php', {
+            fetch('../clientes/save_cliente.php', {
                 method: 'POST',
                 body: formData
             })
@@ -1667,12 +1568,13 @@ try {
                     Swal.fire({
                         icon: 'success',
                         title: '¡Éxito!',
-                        text: 'Paciente agregado correctamente',
+                        text: 'Cliente agregado correctamente',
                         timer: 2000,
                         showConfirmButton: false
                     }).then(() => {
-                        closeModal('newPatientModal');
+                        closeModal('newClienteModal');
                         form.reset();
+                        location.reload();
                     });
                 } else {
                     throw new Error(data.message || 'Error desconocido');
@@ -1683,7 +1585,7 @@ try {
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
-                    text: 'No se pudo guardar el paciente: ' + error.message
+                    text: 'No se pudo guardar el cliente: ' + error.message
                 });
             });
         }
@@ -1775,7 +1677,7 @@ try {
                         
                         Swal.fire({
                             title: '¡Nuevo Cobro Pendiente!',
-                            text: 'Se ha asignado un nuevo cobro a un paciente.',
+                            text: 'Se ha asignado un nuevo cobro a un cliente.',
                             icon: 'info',
                             toast: true,
                             position: 'top-end',
@@ -1872,12 +1774,12 @@ try {
                 </head>
                 <body>
                     <div class="header">
-                        <h3 style="margin:0;">SERVIMEDIC</h3>
+                        <h3 style="margin:0;">CLINOVA</h3>
                         <p style="margin:5px 0;">Despacho de Farmacia</p>
                     </div>
                     <div class="info">
                         <strong>Fecha:</strong> ${date}<br>
-                        <strong>Paciente:</strong> ${currentPharmPatient}
+                        <strong>Cliente:</strong> ${currentPharmPatient}
                     </div>
                     <div class="items">
                         ${itemsHtml}
@@ -1949,7 +1851,7 @@ try {
                     Swal.fire({
                         icon: 'success',
                         title: '¡Cobro Exitoso!',
-                        text: 'Paciente enviado a Sala de Espera',
+                        text: 'Cliente enviado a Cobros',
                         timer: 2000,
                         showConfirmButton: false
                     }).then(() => {

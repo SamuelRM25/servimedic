@@ -1,12 +1,12 @@
 /**
- * Ticket Printer Utility for Servimedic
+ * Ticket Printer Utility for CLINOVA
  * Generates a thermal-printer friendly receipt and triggers the print dialog.
  */
 
 function printTicket(data) {
     // Default header information
     const headerInfo = {
-        title: 'Servimedic',
+        title: 'CLINOVA',
         address: '8va calle 10-21 zona 5 huehuetenango',
         phone: '3404 9600'
     };
@@ -102,7 +102,7 @@ function printTicket(data) {
             <div class="info">
                 <p><strong>Ticket:</strong> #${data.ticketNumber || '---'}</p>
                 <p><strong>Fecha:</strong> ${data.date || new Date().toLocaleString()}</p>
-                <p><strong>Paciente:</strong> ${data.patientName || 'Consumidor Final'}</p>
+                <p><strong>Cliente:</strong> ${data.patientName || 'Consumidor Final'}</p>
                 ${data.doctorName ? `<p><strong>Dr(a):</strong> ${data.doctorName}</p>` : ''}
             </div>
 
@@ -146,7 +146,7 @@ function printTicket(data) {
 
             <div class="footer">
                 <p>¡Gracias por su preferencia!</p>
-                <p>Servimedic - Salud y Bienestar</p>
+                <p>CLINOVA - Salud y Bienestar</p>
             </div>
         </body>
         </html>

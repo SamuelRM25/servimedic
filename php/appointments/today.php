@@ -14,9 +14,9 @@ try {
     
     // Consultar las citas programadas para hoy
     $stmt = $conn->prepare("
-        SELECT c.*, CONCAT(p.nombre, ' ', p.apellido) as nombre_paciente, p.nombre, p.apellido
+        SELECT c.*, p.nombre as nombre_cliente
         FROM citas c
-        LEFT JOIN pacientes p ON c.paciente_cita = p.id_paciente
+        LEFT JOIN clientes p ON c.paciente_cita = p.id_cliente
         WHERE DATE(c.fecha_cita) = ?
         ORDER BY c.hora_cita ASC
     ");
@@ -67,7 +67,7 @@ try {
                                 <?php else: ?>
                                     <?php foreach ($citas as $cita): ?>
                                     <tr>
-                                        <td><?php echo htmlspecialchars($cita['nombre_paciente']); ?></td>
+                                        <td><?php echo htmlspecialchars($cita['nombre_cliente']); ?></td>
                                         <td><?php echo htmlspecialchars(date('H:i:s', strtotime($cita['hora_cita']))); ?></td>
                                         <td><?php echo htmlspecialchars($cita['telefono'] ?? 'N/A'); ?></td>
                                         <td>

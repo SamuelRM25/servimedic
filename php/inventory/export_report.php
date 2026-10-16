@@ -117,7 +117,7 @@ try {
     fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
     
     // Agregar encabezado del reporte
-    fputcsv($output, ['REPORTE DE INVENTARIO - SERVIMEDIC FAMILIAR']);
+    fputcsv($output, ['REPORTE DE INVENTARIO - CLINOVA FAMILIAR']);
     fputcsv($output, ['Generado: ' . date('d/m/Y H:i:s')]);
     fputcsv($output, ['Usuario: ' . $_SESSION['nombre'] . ' ' . $_SESSION['apellido']]);
     fputcsv($output, ['Tipo: ' . ucwords(str_replace('_', ' ', $reportName))]);

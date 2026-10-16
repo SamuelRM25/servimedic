@@ -1,0 +1,7 @@
+# Apache/MAMP strippea el header Authorization por seguridad CGI.
+# CGIPassAuth (Apache 2.4+) le dice a Apache que lo pase a PHP, necesario
+# para que portal_proxy.php reenvie el Bearer token a IDCS en el flujo
+# OIDC de Cargo Expreso (sino authenticate devuelve 401).
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+</IfModule>

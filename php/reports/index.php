@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../../config/database.php';
+require_once '../../includes/functions.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../../index.php");
@@ -60,9 +61,8 @@ if ($id_usuario) {
 $whereIngresosSQL = implode(' AND ', $whereIngresos);
 
 $sqlIngresos = "
-    SELECT o.*, p.tipo_paciente
+    SELECT o.*, 'Privado' as tipo_cliente
     FROM ordenes_cobro o
-    LEFT JOIN pacientes p ON o.id_paciente = p.id_paciente
     WHERE $whereIngresosSQL
 ";
 $stmtIngresos = $conn->prepare($sqlIngresos);
@@ -82,7 +82,7 @@ $breakdown = [
 
 foreach ($ingresosServicios as $ingreso) {
     // Normalize type (some might be lowercase or have different casing in DB)
-    $tipo = ucfirst(strtolower($ingreso['tipo_paciente'] ?? 'Privado'));
+    $tipo = ucfirst(strtolower($ingreso['tipo_cliente'] ?? 'Privado'));
     if ($tipo === 'Epss') $tipo = 'EPS'; // Handle typo if exists
     
     if (isset($breakdown[$tipo])) {
@@ -107,12 +107,14 @@ if ($id_usuario) {
 $whereVentasSQL = implode(' AND ', $whereVentas);
 
 $sqlVentas = "
-    SELECT v.*, SUM(dv.subtotal) as total_venta,
+    SELECT v.*, MAX(p.metodo_pago) as metodo_pedido,
+           SUM(dv.subtotal) as total_venta,
            GROUP_CONCAT(fp.tipo_pago) as metodos_pago,
            GROUP_CONCAT(fp.monto) as montos_pago
     FROM ventas v
     LEFT JOIN detalle_ventas dv ON v.id_venta = dv.id_venta
     LEFT JOIN formas_pago fp ON v.id_venta = fp.id_venta
+    LEFT JOIN pedidos p ON v.id_pedido = p.id_pedido
     WHERE $whereVentasSQL
     GROUP BY v.id_venta
 ";
@@ -121,35 +123,75 @@ $stmtVentas->execute($paramsVentas);
 $ventas = $stmtVentas->fetchAll(PDO::FETCH_ASSOC);
 
 $totalVentas = count($ventas);
-$montoVentasTotal = 0;
+$montoVentasTotal = 0;   // total cobrado (el cliente siempre paga el total)
+$montoDescuentos = 0;    // descuentos por método de pago (solo reporte)
 $montoEfectivo = 0;
 $montoTransferencia = 0;
 $montoTarjeta = 0;
-$montoTarjetaReal = 0;
+$montoVentasReal = 0;    // total cobrado (formas de pago)
+
+// Detalle por venta: total, descuento tarjeta y descuento COD (solo reporte;
+// nunca se descuenta de lo que cobra el cliente)
+$ventasDetalle = [];
+$totDescTarjeta = 0.0;
+$totDescCOD = 0.0;
 
 foreach ($ventas as $venta) {
+    $montoVentasTotal += floatval($venta['total']);
+    $montoDescuentos += floatval($venta['descuento']);
+
     if ($venta['metodos_pago']) {
         $metodos = explode(',', $venta['metodos_pago']);
         $montos = explode(',', $venta['montos_pago']);
-        
+
         foreach ($metodos as $index => $metodo) {
             $monto = floatval($montos[$index] ?? 0);
-            $montoVentasTotal += $monto;
-            
+            $montoVentasReal += $monto;
+
             if ($metodo === 'Efectivo') {
                 $montoEfectivo += $monto;
             } elseif (strpos($metodo, 'Transferencia') !== false) {
                 $montoTransferencia += $monto;
             } elseif (strpos($metodo, 'Tarjeta') !== false) {
                 $montoTarjeta += $monto;
-                $montoTarjetaReal += $monto * 0.938; // Descuento 6.2%
             }
         }
     }
+
+    // Método de pago de la venta (para clasificar el descuento)
+    $metodoVenta = (string) ($venta['metodo_pedido'] ?? '');
+    if ($metodoVenta === '') {
+        $mp = (string) ($venta['metodos_pago'] ?? '');
+        if (strpos($mp, 'Tarjeta') !== false) {
+            $metodoVenta = 'Tarjeta';
+        } elseif (strpos($mp, 'Transferencia') !== false) {
+            $metodoVenta = 'Transferencia';
+        } else {
+            $metodoVenta = 'Efectivo';
+        }
+    }
+
+    $descVenta = calcularDescuento(floatval($venta['total']), $metodoVenta);
+    $venta['metodo_reporte'] = $metodoVenta;
+    $venta['desc_tarjeta'] = ($metodoVenta === 'Tarjeta') ? $descVenta['descuento'] : 0.0;
+    $venta['desc_cod']     = ($metodoVenta === 'COD') ? $descVenta['descuento'] : 0.0;
+    $totDescTarjeta += $venta['desc_tarjeta'];
+    $totDescCOD     += $venta['desc_cod'];
+    $ventasDetalle[] = $venta;
 }
 
-$montoVentasReal = $montoEfectivo + $montoTransferencia + $montoTarjetaReal;
-$descuentoTarjeta = $montoTarjeta - $montoTarjetaReal;
+// Descuentos por método de pago (desde pedidos/cotizaciones procesadas)
+$descuentosPorMetodo = [];
+$sqlDescuentos = "
+    SELECT metodo_pago, COUNT(*) as cantidad, SUM(descuento) as total_descuento
+    FROM pedidos
+    WHERE descuento > 0 AND fecha_pedido BETWEEN ? AND ?
+    GROUP BY metodo_pago
+    ORDER BY total_descuento DESC
+";
+$stmtDesc = $conn->prepare($sqlDescuentos);
+$stmtDesc->execute([$datetime_inicio, $datetime_fin]);
+$descuentosPorMetodo = $stmtDesc->fetchAll(PDO::FETCH_ASSOC);
 
 // ============================================
 // 3. CONTABILIDAD (EGRESOS)
@@ -244,8 +286,8 @@ if ($userRol === 'Administrador' || $userRol === 'Farmacia') {
 // ============================================
 $doctorStats = [];
 if ($userRol === 'Doctor') {
-    // Pacientes vistos (Pagados)
-    $sqlPacientesHoy = "SELECT COUNT(DISTINCT id_paciente) FROM ordenes_cobro WHERE id_medico = ? AND DATE(fecha_pago) = CURDATE() AND estado = 'Pagado'";
+    // Clientes vistos (Pagados)
+    $sqlPacientesHoy = "SELECT COUNT(DISTINCT id_cliente) FROM ordenes_cobro WHERE id_medico = ? AND DATE(fecha_pago) = CURDATE() AND estado = 'Pagado'";
     $stmtPH = $conn->prepare($sqlPacientesHoy);
     $stmtPH->execute([$_SESSION['user_id']]);
     $doctorStats['pacientes_hoy'] = $stmtPH->fetchColumn();
@@ -261,7 +303,7 @@ if ($userRol === 'Doctor') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reportes Avanzados - Servimedic</title>
+    <title>Reportes Avanzados - CLINOVA</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -272,8 +314,8 @@ if ($userRol === 'Doctor') {
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
-            --color-orange: #FF6B35;
-            --color-blue: #4FC3F7;
+            --color-orange: #FF3D00;
+            --color-blue: #1FA8FF;
             --color-white: #FFFFFF;
             --color-text: #2D3748;
             --color-text-light: #718096;
@@ -291,7 +333,7 @@ if ($userRol === 'Doctor') {
         .back-btn:hover { background: linear-gradient(135deg, var(--color-orange), var(--color-blue)); color: white; border-color: transparent; }
         .page-title { font-size: 1.75rem; font-weight: 700; color: var(--color-text); }
         .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.625rem 1.25rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; border: none; text-decoration: none; }
-        .btn-primary { background: linear-gradient(135deg, var(--color-orange), #E85A2B); color: white; }
+        .btn-primary { background: linear-gradient(135deg, var(--color-orange), #E63400); color: white; }
         .btn-secondary { background: var(--color-text-light); color: white; }
         
         .filter-card { background: var(--color-white); border-radius: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); padding: 1.5rem; margin-bottom: 2rem; }
@@ -404,8 +446,8 @@ if ($userRol === 'Doctor') {
             </p>
         </div>
 
-        <!-- Navegación de Pestañas -->
-        <ul class="nav-tabs no-print">
+        <!-- Navegación de Pestañas (removida: solo se muestra el reporte general) -->
+        <!-- <ul class="nav-tabs no-print">
             <li><button class="nav-link active" onclick="openTab('general')">General</button></li>
             <li><button class="nav-link" onclick="openTab('contabilidad')">Contabilidad</button></li>
             <?php if ($userRol === 'Administrador' || $userRol === 'Farmacia'): ?>
@@ -414,7 +456,7 @@ if ($userRol === 'Doctor') {
             <?php if ($userRol === 'Doctor'): ?>
             <li><button class="nav-link" onclick="openTab('doctor')">Mi Rendimiento</button></li>
             <?php endif; ?>
-        </ul>
+        </ul> -->
 
         <!-- Pestaña General -->
         <div id="general" class="tab-content active">
@@ -422,23 +464,96 @@ if ($userRol === 'Doctor') {
                 <div class="stat-card orange">
                     <div class="stat-label">Total Ingresos</div>
                     <div class="stat-value">Q<?php echo number_format($totalIngresos, 2); ?></div>
-                    <div class="stat-sub">Consultas + Ventas</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Consultas Realizadas</div>
-                    <div class="stat-value"><?php echo $totalConsultas; ?></div>
-                    <div class="stat-sub">Monto: Q<?php echo number_format($montoConsultas, 2); ?></div>
-                    <div style="margin-top: 0.5rem; font-size: 0.75rem; color: #718096;">
-                        <?php foreach ($breakdown as $type => $amount): ?>
-                        <div><strong><?php echo $type; ?>:</strong> Q<?php echo number_format($amount, 2); ?></div>
-                        <?php endforeach; ?>
-                    </div>
+                    <div class="stat-sub">Ventas</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Ventas Farmacia</div>
                     <div class="stat-value"><?php echo $totalVentas; ?></div>
                     <div class="stat-sub">Monto Real: Q<?php echo number_format($montoVentasReal, 2); ?></div>
                 </div>
+                <div class="stat-card green">
+                    <div class="stat-label">Descuentos Tarjeta / COD</div>
+                    <div class="stat-value">Q<?php echo number_format($montoDescuentos, 2); ?></div>
+                    <div class="stat-sub">Total Ventas: Q<?php echo number_format($montoVentasTotal, 2); ?></div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <h3 style="margin-bottom: 1rem;"><i class="bi bi-receipt"></i> Detalle de Ventas (Total y Descuentos por Método)</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th># Venta</th>
+                            <th>Fecha</th>
+                            <th>Cliente</th>
+                            <th>Método</th>
+                            <th>Total de la Venta</th>
+                            <th>Descuento Tarjeta</th>
+                            <th>Descuento COD</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($ventasDetalle)): ?>
+                        <tr><td colspan="7" style="text-align: center;">No hay ventas en este periodo</td></tr>
+                        <?php else: ?>
+                        <?php foreach ($ventasDetalle as $v): ?>
+                        <tr>
+                            <td><strong>#<?php echo $v['id_venta']; ?></strong></td>
+                            <td><?php echo fechaGT($v['fecha_venta'], 'd/m/Y H:i'); ?></td>
+                            <td><?php echo htmlspecialchars($v['cliente_nombre']); ?></td>
+                            <td><span class="badge" style="background: #edf2f7;"><?php echo htmlspecialchars($v['metodo_reporte']); ?></span></td>
+                            <td><strong>Q<?php echo number_format($v['total'], 2); ?></strong></td>
+                            <td>
+                                <?php if ($v['desc_tarjeta'] > 0): ?>
+                                    <span style="color: var(--color-success); font-weight: 700;">-Q<?php echo number_format($v['desc_tarjeta'], 2); ?></span>
+                                <?php else: ?>
+                                    <span style="color: #a0aec0;">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($v['desc_cod'] > 0): ?>
+                                    <span style="color: var(--color-success); font-weight: 700;">-Q<?php echo number_format($v['desc_cod'], 2); ?></span>
+                                <?php else: ?>
+                                    <span style="color: #a0aec0;">-</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <tr style="font-weight: 700; background: #f7fafc;">
+                            <td colspan="4">TOTAL</td>
+                            <td>Q<?php echo number_format(array_sum(array_column($ventasDetalle, 'total')), 2); ?></td>
+                            <td>-Q<?php echo number_format($totDescTarjeta, 2); ?></td>
+                            <td>-Q<?php echo number_format($totDescCOD, 2); ?></td>
+                        </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="table-container">
+                <h3 style="margin-bottom: 1rem;"><i class="bi bi-percent"></i> Descuentos por Método de Pago</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Método</th>
+                            <th>Cantidad</th>
+                            <th>Descuento Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($descuentosPorMetodo)): ?>
+                        <tr><td colspan="3" style="text-align: center;">No hay descuentos en este periodo</td></tr>
+                        <?php else: ?>
+                        <?php foreach ($descuentosPorMetodo as $dm): ?>
+                        <tr>
+                            <td><strong><?php echo htmlspecialchars($dm['metodo_pago']); ?></strong></td>
+                            <td><?php echo $dm['cantidad']; ?></td>
+                            <td style="color: var(--color-success); font-weight: 700;">-Q<?php echo number_format($dm['total_descuento'], 2); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -573,7 +688,7 @@ if ($userRol === 'Doctor') {
         <div id="doctor" class="tab-content">
             <div class="stats-grid">
                 <div class="stat-card">
-                    <div class="stat-label">Pacientes Vistos Hoy</div>
+                    <div class="stat-label">Clientes Atendidos Hoy</div>
                     <div class="stat-value"><?php echo $doctorStats['pacientes_hoy']; ?></div>
                 </div>
                 <div class="stat-card green">
@@ -595,7 +710,7 @@ if ($userRol === 'Doctor') {
                 document.getElementById('expenseModal').classList.remove('show');
             }
 
-        document.getElementById('expenseForm').addEventListener('submit', function(e) {
+        document.getElementById('expenseForm')?.addEventListener('submit', function(e) {
             e.preventDefault();
             const formData = new FormData(this);
 
@@ -616,7 +731,7 @@ if ($userRol === 'Doctor') {
 
         // Close modal on overlay click
         document.querySelectorAll('.modal-overlay').forEach(overlay => {
-            overlay.addEventListener('click', function(e) {
+            overlay?.addEventListener('click', function(e) {
                 if (e.target === this) {
                     this.classList.remove('show');
                 }

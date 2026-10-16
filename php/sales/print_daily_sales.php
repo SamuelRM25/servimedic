@@ -275,11 +275,11 @@ try {
         <!-- Header -->
         <div class="header">
             <div class="company-info">
-                <h1>SERVIMEDIC</h1>
+                <h1>CLINOVA</h1>
                 <p class="subtitle">Sistema de Gestión Médica Integral</p>
                 <div style="margin-top:10px; font-size:12px; color:#555;">
                     8va calle 10-21 zona 5 huehuetenango<br>
-                    PBX: 3404 9600 | servimedic.com
+                    PBX: 3404 9600 | clinova.com
                 </div>
             </div>
             <div class="report-meta">
@@ -307,7 +307,7 @@ try {
                 <tr>
                     <th>Hora</th>
                     <th># Documento</th>
-                    <th>Cliente / Paciente</th>
+                    <th>Cliente</th>
                     <th>Usuario</th>
                     <th>Método</th>
                     <th class="text-right">Total</th>
@@ -372,7 +372,7 @@ try {
         </div>
 
         <div style="margin-top: 40px; text-align: center; font-size: 10px; color: #bdc3c7;">
-            Este reporte fue generado automáticamente por el sistema Servimedic el <?php echo date('d/m/Y H:i:s'); ?>
+            Este reporte fue generado automáticamente por el sistema CLINOVA el <?php echo date('d/m/Y H:i:s'); ?>
         </div>
     </div>
 
