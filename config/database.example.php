@@ -1,19 +1,20 @@
 <?php
-// config/database.php
+// config/database.php - Copia este archivo como database.php y llena tus datos reales.
+// NOTA: database.php está en .gitignore y NO debe subirse al repositorio.
 
 class Database {
-    private $host = "buyvuolarphibfd4i5ie-mysql.services.clever-cloud.com";
-    private $db_name = "buyvuolarphibfd4i5ie";
-    private $username = "uebyutsweyo11mee";
-    private $password = "7sVDIlXBSrSGUDS4R1J"; // MAMP suele usar 'root' como contraseña por defecto
-    private $port = "20926";
+    private $host = "HOST_DE_TU_BD";
+    private $db_name = "NOMBRE_DE_TU_BD";
+    private $username = "USUARIO_DE_TU_BD";
+    private $password = "CONTRASENA_DE_TU_BD";
+    private $port = "3306";
     private $conn = null;
 
     public function getConnection() {
         try {
             if ($this->conn === null) {
                 $dsn = "mysql:host=" . $this->host . ";port=" . $this->port . ";dbname=" . $this->db_name . ";charset=utf8";
-                
+
                 $this->conn = new PDO(
                     $dsn,
                     $this->username,

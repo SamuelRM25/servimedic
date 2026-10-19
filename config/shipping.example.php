@@ -1,6 +1,9 @@
 <?php
 /**
  * Configuración de transportistas para el generador de guías.
+ * Copia este archivo como shipping.php y llena las credenciales reales.
+ * NOTA: shipping.php está en .gitignore y NO debe subirse al repositorio.
+ *
  * Credenciales usadas SOLO por el servidor (portal_proxy.php) para
  * precargar el login dentro del iframe embebido. Nunca se guardan en BD.
  */
@@ -14,9 +17,9 @@ return [
             'file'  => __DIR__ . '/../php/shipping/autologin_forza.js',
             'vars'  => [
                 'service' => 'forza',
-                'code'    => '402009',
-                'user'    => 'Servimedic.huehue',
-                'pass'    => 'd688UMJq',
+                'code'    => 'CODIGO_CLIENTE_FORZA',
+                'user'    => 'USUARIO_FORZA',
+                'pass'    => 'CONTRASENA_FORZA',
             ],
         ],
     ],
@@ -35,8 +38,8 @@ return [
             'file'  => __DIR__ . '/../php/shipping/autologin_cargo.js',
             'vars'  => [
                 'service' => 'cargo',
-                'email'   => 'jania1416@gmail.com',
-                'pass'    => 'MabEnr2#',
+                'email'   => 'CORREO_CARGO',
+                'pass'    => 'CONTRASENA_CARGO',
             ],
         ],
     ],

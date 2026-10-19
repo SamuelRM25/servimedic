@@ -1,0 +1,10 @@
+# Credenciales locales (NO subir al repositorio)
+config/database.php
+config/local_database.php
+config/shipping.php
+
+# Logs
+*.log
+
+# Sistema
+.DS_Store
