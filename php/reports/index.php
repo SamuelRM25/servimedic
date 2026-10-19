@@ -17,6 +17,12 @@ $stmt->execute([$_SESSION['user_id']]);
 $userData = $stmt->fetch(PDO::FETCH_ASSOC);
 $userRol = $userData['rol'];
 
+// Permiso de acceso al módulo de Reportes (usuarios.permiso_reportes)
+if (empty($userData['permiso_reportes'])) {
+    header("Location: ../dashboard/index.php");
+    exit();
+}
+
 // Filtros
 $tipo_reporte = $_GET['tipo_reporte'] ?? 'mensual'; // mensual, diario, turno1, turno2, personalizado
 $fecha_inicio = $_GET['fecha_inicio'] ?? date('Y-m-d');
@@ -1197,36 +1203,38 @@ if ($userRol === 'Doctor') {
                 document.getElementById('expenseModal').classList.remove('show');
             }
 
-        document.getElementById('expenseForm')?.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('expenseForm')?.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const formData = new FormData(this);
 
-            try {
-                const data = await withLoading('Registrando gasto...', async () => {
-                    const response = await fetch('save_expense.php', {
-                        method: 'POST',
-                        body: formData
+                try {
+                    const data = await withLoading('Registrando movimiento...', async () => {
+                        const response = await fetch('save_expense.php', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        return response.json();
                     });
-                    return response.json();
+
+                    if (data.success) {
+                        uiToast('Movimiento registrado', 'success');
+                        setTimeout(() => location.reload(), 800);
+                    } else {
+                        uiToast('Error: ' + data.message, 'error', 5000);
+                    }
+                } catch (err) {
+                    uiToast('Error al registrar el movimiento', 'error', 5000);
+                }
+            });
+
+            // Close modal on overlay click
+            document.querySelectorAll('.modal-overlay').forEach(overlay => {
+                overlay?.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        this.classList.remove('show');
+                    }
                 });
-
-                if (data.success) {
-                    uiToast('Gasto registrado', 'success');
-                    setTimeout(() => location.reload(), 800);
-                } else {
-                    uiToast('Error: ' + data.message, 'error', 5000);
-                }
-            } catch (err) {
-                uiToast('Error al registrar el gasto', 'error', 5000);
-            }
-        });
-
-        // Close modal on overlay click
-        document.querySelectorAll('.modal-overlay').forEach(overlay => {
-            overlay?.addEventListener('click', function(e) {
-                if (e.target === this) {
-                    this.classList.remove('show');
-                }
             });
         });
     </script>            
@@ -1283,7 +1291,7 @@ if ($userRol === 'Doctor') {
                     </div>
                     <div class="form-group">
                         <label class="form-label">Fecha</label>
-                        <input type="date" name="fecha" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                        <input type="date" name="fecha" class="form-control" value="<?php echo (new DateTime('now', new DateTimeZone('America/Guatemala')))->format('Y-m-d'); ?>" required>
                     </div>
                 </div>
                 <div class="modal-footer">

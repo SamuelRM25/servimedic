@@ -90,6 +90,22 @@ LOCK TABLES `caja_chica` WRITE;
 UNLOCK TABLES;
 
 --
+-- Table structure for table `casas_farmaceuticas`
+--
+
+DROP TABLE IF EXISTS `casas_farmaceuticas`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `casas_farmaceuticas` (
+  `id_casa` int NOT NULL AUTO_INCREMENT,
+  `nombre` varchar(150) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_casa`),
+  UNIQUE KEY `uq_casa_nombre` (`nombre`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `clientes`
 --
 
@@ -132,6 +148,8 @@ CREATE TABLE `compras` (
   `molecula` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `presentacion` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `casa_farmaceutica` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `codigo_medicamento` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `proveedor` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `cantidad` int NOT NULL,
   `precio_unitario` decimal(10,2) NOT NULL,
   `precio_venta` decimal(10,2) NOT NULL,
@@ -274,6 +292,7 @@ CREATE TABLE `inventario` (
   `mol_medicamento` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `presentacion_med` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `casa_farmaceutica` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `codigo_medicamento` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `cantidad_med` int NOT NULL DEFAULT '0',
   `estado_ingreso` enum('Pendiente','Ingresado','En Traslado') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Ingresado',
   `precio_costo` decimal(10,2) DEFAULT NULL COMMENT 'Precio de compra/costo unitario',
@@ -286,7 +305,7 @@ CREATE TABLE `inventario` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_inventario`),
-  UNIQUE KEY `uq_codigo_referencia` (`codigo_referencia`),
+  KEY `idx_codigo_referencia` (`codigo_referencia`),
   KEY `fk_inventario_sucursal` (`id_sucursal`),
   KEY `fk_inventario_compra` (`id_compra`),
   KEY `idx_estado_ingreso` (`estado_ingreso`),
@@ -303,6 +322,36 @@ CREATE TABLE `inventario` (
 LOCK TABLES `inventario` WRITE;
 /*!40000 ALTER TABLE `inventario` DISABLE KEYS */;
 /*!40000 ALTER TABLE `inventario` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `medicamentos`
+--
+
+DROP TABLE IF EXISTS `medicamentos`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `medicamentos` (
+  `id_medicamento` int NOT NULL AUTO_INCREMENT,
+  `codigo` varchar(20) NOT NULL,
+  `nombre` varchar(200) NOT NULL,
+  `molecula` varchar(200) DEFAULT NULL,
+  `presentacion` varchar(100) DEFAULT NULL,
+  `casa_farmaceutica` varchar(150) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_medicamento`),
+  UNIQUE KEY `uq_medicamento_codigo` (`codigo`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `medicamentos`
+--
+
+LOCK TABLES `medicamentos` WRITE;
+/*!40000 ALTER TABLE `medicamentos` DISABLE KEYS */;
+/*!40000 ALTER TABLE `medicamentos` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -399,6 +448,22 @@ LOCK TABLES `pedidos` WRITE;
 /*!40000 ALTER TABLE `pedidos` DISABLE KEYS */;
 /*!40000 ALTER TABLE `pedidos` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for table `proveedores`
+--
+
+DROP TABLE IF EXISTS `proveedores`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `proveedores` (
+  `id_proveedor` int NOT NULL AUTO_INCREMENT,
+  `nombre` varchar(150) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_proveedor`),
+  UNIQUE KEY `uq_proveedor_nombre` (`nombre`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `recetas`
@@ -506,6 +571,7 @@ CREATE TABLE `usuarios` (
   `password` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `telefono` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `rol` enum('Administrador','Doctor','Mayoreo','Farmacia') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `permiso_reportes` tinyint(1) NOT NULL DEFAULT '1',
   `id_sucursal` int DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -523,7 +589,7 @@ CREATE TABLE `usuarios` (
 
 LOCK TABLES `usuarios` WRITE;
 /*!40000 ALTER TABLE `usuarios` DISABLE KEYS */;
-INSERT INTO `usuarios` VALUES (1,'Samuel','Ramírez','admin','admin','39029076','Administrador',1,'2025-12-10 04:49:01','2025-12-10 04:49:01'),(2,'Aron','De León','draron','CLINOVA','53489634','Doctor',1,'2025-12-10 21:28:53','2026-10-10 00:32:38'),(3,'Jannya','Rivas','drajannya','CLINOVA','34049600','Doctor',1,'2025-12-10 21:28:53','2026-10-10 00:32:38'),(4,'Enrique','Pineda','SFenrique','CLINOVA','59167747','Administrador',1,'2025-12-10 21:28:53','2026-10-10 00:32:38'),(5,'Sonia','López','SFsonia','CLINOVA','50525292','Farmacia',1,'2025-12-10 21:28:53','2026-10-10 00:32:38'),(6,'Gabriela','Gomez','SFgabriela','CLINOVA','52148236','Mayoreo',2,'2025-12-15 16:37:51','2026-10-10 00:32:38'),(7,'Yeni','León','SFyeni','CLINOVA','35864417','Administrador',2,'2025-12-15 16:41:00','2026-10-10 00:32:38'),(8,'Jannya','Rivas','SFjannya','CLINOVA','34049600','Administrador',1,'2025-12-15 18:45:07','2026-10-10 00:32:38'),(9,'Aron','De León','SFaron','CLINOVA','53489634','Administrador',1,'2025-12-15 18:45:07','2026-10-10 00:32:38');
+INSERT INTO `usuarios` (`id`,`nombre`,`apellido`,`usuario`,`password`,`telefono`,`rol`,`id_sucursal`,`created_at`,`updated_at`) VALUES (1,'Samuel','Ramírez','admin','admin','39029076','Administrador',1,'2025-12-10 04:49:01','2025-12-10 04:49:01'),(2,'Aron','De León','draron','CLINOVA','53489634','Doctor',1,'2025-12-10 21:28:53','2026-10-10 00:32:38'),(3,'Jannya','Rivas','drajannya','CLINOVA','34049600','Doctor',1,'2025-12-10 21:28:53','2026-10-10 00:32:38'),(4,'Enrique','Pineda','SFenrique','CLINOVA','59167747','Administrador',1,'2025-12-10 21:28:53','2026-10-10 00:32:38'),(5,'Sonia','López','SFsonia','CLINOVA','50525292','Farmacia',1,'2025-12-10 21:28:53','2026-10-10 00:32:38'),(6,'Gabriela','Gomez','SFgabriela','CLINOVA','52148236','Mayoreo',2,'2025-12-15 16:37:51','2026-10-10 00:32:38'),(7,'Yeni','León','SFyeni','CLINOVA','35864417','Administrador',2,'2025-12-15 16:41:00','2026-10-10 00:32:38'),(8,'Jannya','Rivas','SFjannya','CLINOVA','34049600','Administrador',1,'2025-12-15 18:45:07','2026-10-10 00:32:38'),(9,'Aron','De León','SFaron','CLINOVA','53489634','Administrador',1,'2025-12-15 18:45:07','2026-10-10 00:32:38');
 /*!40000 ALTER TABLE `usuarios` ENABLE KEYS */;
 UNLOCK TABLES;
 

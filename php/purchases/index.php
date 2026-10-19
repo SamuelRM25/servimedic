@@ -25,10 +25,37 @@ try {
     $stmt->execute();
     $compras = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Agrupar compras por proveedor (casa_farmaceutica)
+    // Proveedores registrados (autocompletado en el formulario de compra)
+    $proveedoresLista = [];
+    try {
+        $proveedoresLista = $conn->query("SELECT nombre FROM proveedores ORDER BY nombre ASC")->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Exception $e) {
+        $proveedoresLista = [];
+    }
+
+    // Casas farmacéuticas registradas (autocompletado por medicamento)
+    $casasFarmaceuticasLista = [];
+    try {
+        $casasFarmaceuticasLista = $conn->query("SELECT nombre FROM casas_farmaceuticas ORDER BY nombre ASC")->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Exception $e) {
+        $casasFarmaceuticasLista = [];
+    }
+
+    // Catálogo de medicamentos (código único -> datos del medicamento)
+    $medicamentosLista = [];
+    try {
+        $medicamentosLista = $conn->query("SELECT codigo, nombre, molecula, presentacion, casa_farmaceutica FROM medicamentos ORDER BY codigo ASC")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $medicamentosLista = [];
+    }
+
+    // Agrupar compras por proveedor (respaldo: casa farmacéutica)
     $porProveedor = [];
     foreach ($compras as $compra) {
-        $nombreProv = trim($compra['casa_farmaceutica'] ?? '');
+        $nombreProv = trim($compra['proveedor'] ?? '');
+        if ($nombreProv === '') {
+            $nombreProv = trim($compra['casa_farmaceutica'] ?? '');
+        }
         if ($nombreProv === '') $nombreProv = 'Sin proveedor';
         $key = mb_strtolower($nombreProv, 'UTF-8');
         if (!isset($porProveedor[$key])) {
@@ -319,6 +346,17 @@ $userRole = $_SESSION['rol'] ?? '';
         .action-btn-delete:hover { background: #FEB2B2; }
 
         /* Modal */
+        /* Autocompletado (proveedores y casas farmacéuticas) */
+        .autocomplete-results {
+            position: fixed; z-index: 4000; display: none;
+            background: var(--color-white); border: 2px solid var(--color-border);
+            border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            max-height: 220px; overflow-y: auto;
+        }
+        .autocomplete-results.show { display: block; }
+        .autocomplete-item { padding: 0.55rem 0.9rem; font-size: 0.85rem; cursor: pointer; }
+        .autocomplete-item:hover { background: rgba(0, 0, 0, 0.05); }
+
         .modal-overlay {
             display: none;
             position: fixed;
@@ -841,7 +879,7 @@ $userRole = $_SESSION['rol'] ?? '';
                                 $groupedPurchases[$ref] = [
                                     'ref' => $ref,
                                     'fecha' => $compra['fecha_compra'],
-                                    'proveedor' => $compra['casa_farmaceutica'], // Assuming main supplier
+                                    'proveedor' => trim($compra['proveedor'] ?? '') !== '' ? $compra['proveedor'] : $compra['casa_farmaceutica'],
                                     'factura' => $compra['numero_factura'] ?? '',
                                     'tipo_factura' => $compra['tipo_factura'],
                                     'total' => 0,
@@ -1133,7 +1171,7 @@ $userRole = $_SESSION['rol'] ?? '';
                         </div>
                     </div>
 
-                    <div class="form-row">
+                    <div class="form-row-3">
                         <div class="form-group">
                             <label class="form-label">Tipo de Pago *</label>
                             <select name="tipo_pago" class="form-control" required>
@@ -1141,6 +1179,10 @@ $userRole = $_SESSION['rol'] ?? '';
                                 <option value="Crédito 30 días">Crédito 30 días</option>
                                 <option value="Crédito 60 días">Crédito 60 días</option>
                             </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Proveedor *</label>
+                            <input type="text" name="proveedor" id="proveedorInput" class="form-control" required autocomplete="off" placeholder="Buscar o escribir proveedor...">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Observaciones Generales</label>
@@ -1160,16 +1202,17 @@ $userRole = $_SESSION['rol'] ?? '';
                         <table class="items-table" id="purchaseItemsTable">
                             <thead>
                                 <tr>
-                                    <th style="width: 15%">Medicamento</th>
-                                    <th style="width: 10%">Molécula</th>
-                                    <th style="width: 10%">Presentación</th>
-                                    <th style="width: 10%">Casa Farm.</th>
-                                    <th style="width: 8%">Lote</th>
-                                    <th style="width: 8%">Vence</th>
-                                    <th style="width: 7%">Cant.</th>
-                                    <th style="width: 10%">P. Compra</th>
-                                    <th style="width: 10%">P. Venta</th>
-                                    <th style="width: 10%">Subtotal</th>
+                                    <th style="width: 8%">Código</th>
+                                    <th style="width: 12%">Medicamento</th>
+                                    <th style="width: 9%">Molécula</th>
+                                    <th style="width: 9%">Presentación</th>
+                                    <th style="width: 9%">Casa Farm.</th>
+                                    <th style="width: 7%">Lote</th>
+                                    <th style="width: 7%">Vence</th>
+                                    <th style="width: 6%">Cant.</th>
+                                    <th style="width: 9%">P. Compra</th>
+                                    <th style="width: 9%">P. Venta</th>
+                                    <th style="width: 9%">Subtotal</th>
                                     <th style="width: 2%"></th>
                                 </tr>
                             </thead>
@@ -1292,6 +1335,131 @@ $userRole = $_SESSION['rol'] ?? '';
             }
         }
 
+        const proveedoresData = <?php echo json_encode($proveedoresLista, JSON_UNESCAPED_UNICODE); ?>;
+        const casasFarmaceuticasData = <?php echo json_encode($casasFarmaceuticasLista, JSON_UNESCAPED_UNICODE); ?>;
+        const medicamentosData = <?php echo json_encode($medicamentosLista, JSON_UNESCAPED_UNICODE); ?>;
+
+        let autocompleteDropdown = null;
+        let autocompleteInput = null;
+        let autocompleteSelect = null;
+
+        function autocompleteEscape(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function getAutocompleteDropdown() {
+            if (!autocompleteDropdown) {
+                autocompleteDropdown = document.createElement('div');
+                autocompleteDropdown.className = 'autocomplete-results';
+                document.body.appendChild(autocompleteDropdown);
+                autocompleteDropdown.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    const item = e.target.closest('.autocomplete-item');
+                    if (item && autocompleteInput && autocompleteSelect) {
+                        autocompleteSelect(item.dataset.value);
+                        autocompleteDropdown.classList.remove('show');
+                    }
+                });
+            }
+            return autocompleteDropdown;
+        }
+
+        function showAutocomplete(input, matches, onSelect) {
+            const dd = getAutocompleteDropdown();
+            if (!matches.length) { dd.classList.remove('show'); return; }
+            autocompleteInput = input;
+            autocompleteSelect = onSelect;
+            dd.innerHTML = matches.map(m => '<div class="autocomplete-item" data-value="' + autocompleteEscape(m.value) + '">' + autocompleteEscape(m.label) + '</div>').join('');
+            const r = input.getBoundingClientRect();
+            dd.style.left = r.left + 'px';
+            dd.style.top = (r.bottom + 4) + 'px';
+            dd.style.width = Math.max(r.width, 200) + 'px';
+            dd.classList.add('show');
+        }
+
+        function attachAutocomplete(input, data) {
+            if (!input || input.dataset.acAttached) return;
+            input.dataset.acAttached = '1';
+            input.setAttribute('autocomplete', 'off');
+
+            const render = () => {
+                const term = input.value.trim().toLowerCase();
+                const matches = term ? data.filter(p => p.toLowerCase().includes(term)).slice(0, 8) : [];
+                showAutocomplete(input, matches.map(p => ({ value: p, label: p })), (val) => { input.value = val; });
+            };
+
+            input.addEventListener('input', render);
+            input.addEventListener('focus', render);
+            input.addEventListener('blur', () => setTimeout(() => {
+                if (autocompleteInput === input) autocompleteDropdown?.classList.remove('show');
+            }, 150));
+        }
+
+        function normalizarTexto(s) {
+            return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        }
+
+        function inicialesCasa(casa) {
+            const limpio = (casa || '').replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ\s]/g, ' ').trim();
+            const partes = limpio.split(/(?=[A-ZÁÉÍÓÚÑ])|\s+/).filter(p => p.trim() !== '').slice(0, 2);
+            return partes.map(p => normalizarTexto(p).charAt(0)).join('');
+        }
+
+        function generarCodigoMedicamento(nombre, casa) {
+            const baseNombre = normalizarTexto(nombre).slice(0, 3);
+            if (!baseNombre) return '';
+            const base = inicialesCasa(casa) + baseNombre;
+            const usados = new Set(medicamentosData.map(m => m.codigo.toLowerCase()));
+            document.querySelectorAll('#purchaseItemsBody input[name$="[codigo_medicamento]"]').forEach(i => {
+                if (i.value.trim()) usados.add(i.value.trim().toLowerCase());
+            });
+            let n = 1;
+            while (usados.has(base + String(n).padStart(2, '0'))) n++;
+            return base + String(n).padStart(2, '0');
+        }
+
+        function attachMedicamentoAutocomplete(input) {
+            if (!input || input.dataset.medAttached) return;
+            input.dataset.medAttached = '1';
+            input.setAttribute('autocomplete', 'off');
+
+            const render = () => {
+                const term = input.value.trim().toLowerCase();
+                const matches = term ? medicamentosData.filter(m =>
+                    m.codigo.toLowerCase().includes(term) || (m.nombre || '').toLowerCase().includes(term)
+                ).slice(0, 8) : [];
+                showAutocomplete(input, matches.map(m => ({
+                    value: m.codigo,
+                    label: m.codigo + ' — ' + m.nombre + (m.casa_farmaceutica ? ' (' + m.casa_farmaceutica + ')' : '')
+                })), (val) => {
+                    const med = medicamentosData.find(m => m.codigo === val);
+                    if (!med) return;
+                    const row = input.closest('tr');
+                    input.value = med.codigo;
+                    row.querySelector('input[name$="[nombre_medicamento]"]').value = med.nombre || '';
+                    row.querySelector('input[name$="[molecula]"]').value = med.molecula || '';
+                    row.querySelector('input[name$="[presentacion]"]').value = med.presentacion || '';
+                    row.querySelector('input[name$="[casa_farmaceutica]"]').value = med.casa_farmaceutica || '';
+                });
+            };
+
+            input.addEventListener('input', render);
+            input.addEventListener('focus', render);
+            input.addEventListener('blur', () => setTimeout(() => {
+                if (autocompleteInput === input) autocompleteDropdown?.classList.remove('show');
+            }, 150));
+        }
+
+        document.addEventListener('scroll', () => {
+            if (!autocompleteDropdown?.classList.contains('show') || !autocompleteInput) return;
+            const r = autocompleteInput.getBoundingClientRect();
+            autocompleteDropdown.style.left = r.left + 'px';
+            autocompleteDropdown.style.top = (r.bottom + 4) + 'px';
+        }, true);
+        window.addEventListener('resize', () => autocompleteDropdown?.classList.remove('show'));
+
+        attachAutocomplete(document.getElementById('proveedorInput'), proveedoresData);
+
         function openAddModal() {
             document.getElementById('addModal').classList.add('show');
             
@@ -1312,6 +1480,7 @@ $userRole = $_SESSION['rol'] ?? '';
             const row = document.createElement('tr');
             
             row.innerHTML = `
+                <td><input type="text" name="items[${rowCount}][codigo_medicamento]" placeholder="Código" autocomplete="off"></td>
                 <td><input type="text" name="items[${rowCount}][nombre_medicamento]" required placeholder="Nombre"></td>
                 <td><input type="text" name="items[${rowCount}][molecula]" required placeholder="Molécula"></td>
                 <td><input type="text" name="items[${rowCount}][presentacion]" required placeholder="Presentación"></td>
@@ -1330,6 +1499,19 @@ $userRole = $_SESSION['rol'] ?? '';
             `;
             
             tbody.appendChild(row);
+
+            const codigoInput = row.querySelector('input[name$="[codigo_medicamento]"]');
+            const nombreInput = row.querySelector('input[name$="[nombre_medicamento]"]');
+            const casaInput = row.querySelector('input[name$="[casa_farmaceutica]"]');
+
+            attachAutocomplete(casaInput, casasFarmaceuticasData);
+            attachMedicamentoAutocomplete(codigoInput);
+
+            nombreInput.addEventListener('blur', () => {
+                if (!codigoInput.value.trim() && nombreInput.value.trim()) {
+                    codigoInput.value = generarCodigoMedicamento(nombreInput.value, casaInput.value);
+                }
+            });
         }
 
         function removePurchaseRow(btn) {

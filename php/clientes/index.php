@@ -15,6 +15,7 @@ $rol_usuario      = $_SESSION['rol']      ?? 'Usuario';
 try {
     $database = new Database();
     $conn = $database->getConnection();
+    $permisoReportes = tienePermisoReportes($conn, (int)$_SESSION['user_id']);
 
     $search = trim($_GET['q'] ?? '');
 
@@ -491,6 +492,8 @@ try {
                 <?php if ($rol_usuario === 'Administrador'): ?>
                 <li class="nav-item"><a href="../sales/index.php" class="nav-link"><i class="bi bi-shop"></i> Ventas</a></li>
                 <li class="nav-item"><a href="../purchases/index.php" class="nav-link"><i class="bi bi-cart-plus"></i> Compras</a></li>
+                <?php endif; ?>
+                <?php if (!empty($permisoReportes)): ?>
                 <li class="nav-item"><a href="../reports/index.php" class="nav-link"><i class="bi bi-file-earmark-text"></i> Reportes</a></li>
                 <?php endif; ?>
             </ul>

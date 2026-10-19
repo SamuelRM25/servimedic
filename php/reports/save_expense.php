@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../../config/database.php';
+require_once '../../includes/functions.php';
 
 header('Content-Type: application/json');
 
@@ -13,6 +14,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $database = new Database();
         $conn = $database->getConnection();
+
+        if (!tienePermisoReportes($conn, (int)$_SESSION['user_id'])) {
+            echo json_encode(['success' => false, 'message' => 'Sin permiso para el módulo de Reportes']);
+            exit;
+        }
 
         // Ensure table exists (Self-repair, esquema real)
         $conn->exec("CREATE TABLE IF NOT EXISTS `caja_chica` (

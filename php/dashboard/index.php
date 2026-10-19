@@ -17,6 +17,7 @@ $rol_usuario = $_SESSION['rol'] ?? 'Usuario';
 try {
     $database = new Database();
     $conn = $database->getConnection();
+    $permisoReportes = tienePermisoReportes($conn, (int)$_SESSION['user_id']);
 
     // Transferencias (Notificaciones)
     $transferenciasEnviadas = [];
@@ -1013,7 +1014,7 @@ try {
                     </li>
                     <?php endif; ?>
 
-                    <?php if ($rol_usuario === 'Administrador'): ?>
+                    <?php if (!empty($permisoReportes)): ?>
                     <li class="nav-item">
                         <a href="../reports/index.php" class="nav-link">
                             <i class="bi bi-file-earmark-text"></i>

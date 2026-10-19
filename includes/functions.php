@@ -248,3 +248,13 @@ function formaPagoDesdeMetodo(string $metodoPago): string {
             return 'Efectivo';
     }
 }
+
+/**
+ * Indica si un usuario tiene permiso de acceso al módulo de Reportes.
+ * Basado en usuarios.permiso_reportes (1 = permitido, 0 = denegado).
+ */
+function tienePermisoReportes(PDO $conn, int $idUsuario): bool {
+    $stmt = $conn->prepare("SELECT permiso_reportes FROM usuarios WHERE id = ?");
+    $stmt->execute([$idUsuario]);
+    return (bool)$stmt->fetchColumn();
+}

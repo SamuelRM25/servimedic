@@ -2442,6 +2442,12 @@ try {
         }
 
         updateStats('cotizaciones');
+
+        if (new URLSearchParams(location.search).get('nueva_venta') === '1') {
+            openNewOrder();
+            setTipo('venta');
+            history.replaceState(null, '', 'index.php');
+        }
     </script>
     <?php include __DIR__ . '/../includes/whatsapp_float.php'; ?>
     <?php include __DIR__ . '/../includes/ui_feedback.php'; ?>

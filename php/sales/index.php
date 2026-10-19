@@ -334,7 +334,7 @@ try {
                 <button class="btn-premium btn-report" onclick="window.open('print_daily_sales.php', '_blank', 'width=800,height=800')">
                     <i class="bi bi-printer-fill"></i> Reporte Diario
                 </button>
-                <button class="btn-premium btn-action" onclick="openNewSaleModal()">
+                <button class="btn-premium btn-action" onclick="window.location.href='../orders/index.php?nueva_venta=1'">
                     <i class="bi bi-plus-lg"></i> Nueva Venta
                 </button>
                 <?php include '../../includes/clock.php'; ?>
