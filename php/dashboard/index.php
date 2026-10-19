@@ -14,57 +14,11 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
 $rol_usuario = $_SESSION['rol'] ?? 'Usuario';
 
 // Fetch Dashboard Data
-$doctores = []; // Initialize
 try {
     $database = new Database();
     $conn = $database->getConnection();
-    
-    // 0. Fetch Doctors (Prioritized)
-    try {
-        $stmtDoctores = $conn->query("SELECT id, nombre, apellido FROM usuarios WHERE rol IN ('Doctor', 'Medico', 'Médico') ORDER BY nombre ASC");
-        $stmtDoctores->execute();
-        $doctores = $stmtDoctores->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $e) {
-        // Silent fail for doctors if table missing (unlikely)
-        $doctores = [];
-    }
 
-    // 0.5 Fetch All Patients for Dropdown (Optimized for name only)
-    try {
-        $stmtClientes = $conn->query("SELECT id_cliente, nombre FROM clientes ORDER BY nombre ASC");
-        $stmtClientes->execute();
-        $clientes = $stmtClientes->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $e) {
-        $clientes = [];
-    }
-
-    // 1. Turnos (Citas de hoy) - This section is now effectively replaced by Pending Charges for display
-    // 4. Check Pending Charges
-    $stmtCobros = $conn->prepare("
-        SELECT o.*, c.nombre as nombre_cliente, u.nombre as doctor_nombre
-        FROM ordenes_cobro o
-        JOIN clientes c ON o.id_cliente = c.id_cliente
-        LEFT JOIN usuarios u ON o.id_medico = u.id
-        WHERE o.estado = 'Pendiente'
-        ORDER BY o.fecha_creacion ASC
-    ");
-    $stmtCobros->execute();
-    $cobrosPendientes = $stmtCobros->fetchAll(PDO::FETCH_ASSOC);
-
-    // 5. Pharmacy Queue (Clientes enviados a Farmacia)
-    $stmtFarmacia = $conn->query("
-        SELECT o.*, c.nombre as nombre_cliente
-        FROM ordenes_cobro o
-        JOIN clientes c ON o.id_cliente = c.id_cliente
-        WHERE o.necesita_farmacia = 1
-        AND o.estado IN ('Pagado', 'Atendido')
-        AND o.fecha_pago >= CURDATE()
-        ORDER BY o.fecha_pago ASC
-    ");
-    $stmtFarmacia->execute();
-    $farmaciaQueue = $stmtFarmacia->fetchAll(PDO::FETCH_ASSOC);
-
-    // 6. Transferencias (Notificaciones)
+    // Transferencias (Notificaciones)
     $transferenciasEnviadas = [];
     $transferenciasEntrantes = [];
     
@@ -129,57 +83,13 @@ try {
     $stmt = $conn->query("SELECT COUNT(*) FROM pedidos WHERE YEAR(fecha_pedido) = YEAR(CURDATE()) AND MONTH(fecha_pedido) = MONTH(CURDATE())");
     $pedidosMesCount = (int) $stmt->fetchColumn();
 
-    // Cobros pendientes (for the queue)
-    $waitingCount = count($cobrosPendientes);
-
-    // 3. Cobros Pendientes (This section is now handled by $cobrosPendientes above)
-    // Ensure table exists first (just in case)
-    $conn->exec("CREATE TABLE IF NOT EXISTS `ordenes_cobro` (
-      `id_orden` int(11) NOT NULL AUTO_INCREMENT,
-      `id_cliente` int(11) NOT NULL,
-      `id_medico` int(11) NOT NULL,
-      `monto` decimal(10,2) NOT NULL,
-      `tipo_cobro` enum('Consulta','Procedimiento','Examen','Otro') NOT NULL,
-      `descripcion` text DEFAULT NULL,
-      `estado` enum('Pendiente','Pagado') NOT NULL DEFAULT 'Pendiente',
-      `fecha_creacion` timestamp NOT NULL DEFAULT current_timestamp(),
-      `fecha_pago` timestamp NULL DEFAULT NULL,
-      PRIMARY KEY (`id_orden`),
-      KEY `fk_orden_cliente` (`id_cliente`),
-      KEY `fk_orden_medico` (`id_medico`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;");
-
-    // The original query for cobrosPendientes is now replaced by $stmtCobros above.
-    // This block is kept for table creation, but the fetch is moved.
-    // $stmt = $conn->query("
-    //     SELECT o.*, c.nombre as nombre_cliente
-    //     FROM ordenes_cobro o
-    //     JOIN clientes c ON o.id_cliente = c.id_cliente
-    //     WHERE o.estado = 'Pendiente'
-    //     ORDER BY o.fecha_creacion DESC
-    // ");
-    // $cobrosPendientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // 4. Fetch Doctors for Dropdown (Include variants of Doctor/Medico)
-    // Moved to top
-    // $stmtDoctores = $conn->query("SELECT id, nombre, apellido FROM usuarios WHERE rol IN ('Doctor', 'Medico', 'Médico') ORDER BY nombre ASC");
-    // $stmtDoctores->execute();
-    // $doctores = $stmtDoctores->fetchAll(PDO::FETCH_ASSOC);
-
 } catch (Exception $e) {
     // Fallback if DB error
-    $turnos = []; // Keep this for compatibility if needed elsewhere, though it's not used in the dashboard queue anymore
     $expiringCount = 0;
     $lowStockCount = 0;
     $pedidosMesCount = 0;
-    $waitingCount = 0;
-    $cobrosPendientes = [];
-    $farmaciaQueue = [];
     $transferenciasEnviadas = [];
     $transferenciasEntrantes = [];
-    // Ensure doctores is defined if main try fails
-    if (!isset($doctores)) { $doctores = []; }
-    if (!isset($clientes)) { $clientes = []; }
 }
 ?>
 
@@ -767,20 +677,6 @@ try {
             margin-top: 0;
         }
 
-        /* Dashboard Grid Layout */
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 1.5fr 1fr;
-            gap: 2rem;
-            margin-top: 1rem;
-        }
-
-        @media (max-width: 1024px) {
-            .dashboard-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
         <!-- Notifications Section -->
         <?php if (!empty($transferenciasEntrantes) || !empty($transferenciasEnviadas)): ?>
         <div style="margin-bottom: 2rem;">
@@ -956,9 +852,14 @@ try {
 
         /* Stats Widgets */
         .stats-container {
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        .stats-container > h3 {
+            grid-column: 1 / -1;
         }
 
         .stat-widget {
@@ -1112,15 +1013,6 @@ try {
                     </li>
                     <?php endif; ?>
 
-                    <?php if (in_array($rol_usuario, ['Administrador'])): ?>
-                    <li class="nav-item">
-                        <a href="../billing/index.php" class="nav-link">
-                            <i class="bi bi-cash-coin"></i>
-                            <span>Cobros</span>
-                        </a>
-                    </li>
-                    <?php endif; ?>
-
                     <?php if ($rol_usuario === 'Administrador'): ?>
                     <li class="nav-item">
                         <a href="../reports/index.php" class="nav-link">
@@ -1161,12 +1053,6 @@ try {
                         </div>
                         <span>Nuevo Cliente</span>
                     </button>
-                    <button class="btn-new-patient" onclick="openManualChargeModal()" style="background: linear-gradient(135deg, var(--color-blue), var(--color-blue-dark));">
-                        <div class="icon-wrapper">
-                            <i class="bi bi-cash-coin"></i>
-                        </div>
-                        <span>Realizar Cobro</span>
-                    </button>
                 </div>
                 <?php else: ?>
                 <div></div>
@@ -1175,74 +1061,8 @@ try {
                 <?php include '../../includes/clock.php'; ?>
             </div>
 
-            <!-- Dashboard Grid -->
-            <div class="dashboard-grid">
-                <!-- Left: Queue System -->
-                <div class="dashboard-grid-col">
-                    <!-- PHARMACY QUEUE -->
-                    <?php if (!empty($farmaciaQueue)): ?>
-                    <div class="section-header">
-                        <h2 class="section-title-lg"><i class="bi bi-shop"></i> Farmacia - Entregas Pendientes</h2>
-                        <span class="current-date"><?php echo count($farmaciaQueue); ?></span>
-                    </div>
-                    <div class="queue-container">
-                        <div class="queue-list">
-                            <?php foreach ($farmaciaQueue as $fq): ?>
-                            <div class="queue-card" onclick="openPharmacyModal(<?php echo $fq['id_orden']; ?>, '<?php echo htmlspecialchars($fq['nombre_cliente']); ?>')">
-                                <div class="queue-time">
-                                    <?php echo date('H:i', strtotime($fq['fecha_pago'])); ?>
-                                </div>
-                                <div class="queue-details">
-                                    <h4><?php echo htmlspecialchars($fq['nombre_cliente']); ?></h4>
-                                    <p><i class="bi bi-prescription"></i> Ver Receta</p>
-                                </div>
-                                <div class="queue-status">
-                                    <i class="bi bi-chevron-right"></i>
-                                </div>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <br>
-                    <?php endif; ?>
-
-                    <!-- PENDING CHARGES QUEUE -->
-                    <div class="section-header">
-                        <h3 class="section-title-lg"><i class="bi bi-cash-stack"></i> Cobros Pendientes </h3>
-                        <span class="current-date" id="chargeCountBadge"><?php echo count($cobrosPendientes); ?></span>
-                    </div>
-                    
-                    <div class="queue-list" id="pendingChargesList">
-                        <?php if (empty($cobrosPendientes)): ?>
-                            <div class="empty-state">
-                                <i class="bi bi-cash-coin"></i>
-                                <p>No hay cobros pendientes actualmente.</p>
-                            </div>
-                        <?php else: ?>
-                            <?php foreach ($cobrosPendientes as $cobro): 
-                                $statusClass = 'status-waiting'; // All are pending
-                                $statusText = 'Pendiente';
-                            ?>
-                            <div class="queue-card" onclick="processCharge(<?php echo $cobro['id_orden']; ?>)">
-                                <div class="queue-time">
-                                    <?php echo date('g:i A', strtotime($cobro['fecha_creacion'])); ?>
-                                </div>
-                                <div class="queue-details">
-                                    <h4><?php echo htmlspecialchars($cobro['nombre_cliente']); ?></h4>
-                                    <p><i class="bi bi-person-badge"></i> Dr. <?php echo htmlspecialchars($cobro['doctor_nombre'] ?? 'No asignado'); ?></p>
-                                    <p><i class="bi bi-tag"></i> <?php echo htmlspecialchars($cobro['tipo_cobro']); ?> - Q<?php echo number_format($cobro['monto'], 2); ?></p>
-                                </div>
-                                <div class="queue-status">
-                                    <span class="status-badge <?php echo $statusClass; ?>"><?php echo $statusText; ?></span>
-                                </div>
-                            </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <!-- Right: Stats Widgets -->
-                <div class="stats-container">
+            <!-- Stats Widgets -->
+            <div class="stats-container">
                     <h3 class="section-title-lg"><i class="bi bi-activity"></i> Resumen en Tiempo Real</h3>
                     
                     <div class="stat-widget warning">
@@ -1277,7 +1097,6 @@ try {
                             <div class="widget-sub"><?php echo date('F Y'); ?></div>
                         </div>
                     </div>
-                </div>
             </div>
         </main>
     </div>
@@ -1315,216 +1134,11 @@ try {
         </div>
     </div>
     
-    <!-- Manual Charge Modal -->
-    <div class="modal-overlay" id="manualChargeModal">
-        <div class="modal" style="max-width: 550px; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
-            <div class="modal-header" style="background: linear-gradient(135deg, #FF3D00 0%, #FF6E40 100%); padding: 25px 30px;">
-                <div>
-                    <h2 class="modal-title" style="margin: 0; font-size: 1.6rem; color: white; font-weight: 700;">Cobro Directo</h2>
-                    <p style="margin: 5px 0 0; font-size: 0.95rem; opacity: 0.9; color: rgba(255,255,255,0.9); font-weight: 400;">Registrar pago y pase a espera</p>
-                </div>
-                <button class="modal-close" onclick="closeModal('manualChargeModal')" style="color: white; opacity: 0.8; hover: opacity: 1;">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-            <form id="manualChargeForm" onsubmit="submitManualCharge(event)">
-                <div class="modal-body" style="padding: 30px; background: #f8f9fa;">
-                    <style>
-                        .premium-input-group {
-                            background: white;
-                            border: 1px solid #e0e0e0;
-                            border-radius: 12px;
-                            display: flex;
-                            align-items: center;
-                            transition: all 0.2s;
-                            padding: 2px;
-                        }
-                        .premium-input-group:focus-within {
-                            border-color: #FF3D00;
-                            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
-                            transform: translateY(-1px);
-                        }
-                        .premium-input-group .input-group-text {
-                            background: transparent;
-                            border: none;
-                            color: #FF3D00;
-                            padding: 10px 0 10px 15px; /* Adjust padding */
-                            font-size: 1.1rem;
-                        }
-                        .premium-input-group .form-control, 
-                        .premium-input-group .form-select {
-                            border: none;
-                            box-shadow: none !important;
-                            padding: 12px 15px 12px 10px;
-                            font-size: 0.95rem;
-                            background: transparent;
-                            height: auto; /* Ensure height adjusts */
-                        }
-                        .premium-label {
-                            font-size: 0.75rem;
-                            font-weight: 700;
-                            text-transform: uppercase;
-                            letter-spacing: 0.8px;
-                            color: #8898aa;
-                            margin-bottom: 6px;
-                            display: block;
-                        }
-                        .btn-modal-action {
-                            padding: 12px 25px;
-                            border-radius: 10px;
-                            font-weight: 600;
-                            letter-spacing: 0.3px;
-                            transition: all 0.2s;
-                            border: none;
-                        }
-                        .btn-cancel {
-                            background: #f1f3f5;
-                            color: #636e72;
-                        }
-                        .btn-cancel:hover {
-                            background: #e9ecef;
-                            color: #2d3436;
-                        }
-                        .btn-submit {
-                            background: linear-gradient(135deg, #FF3D00 0%, #E63400 100%);
-                            color: white;
-                            box-shadow: 0 4px 12px rgba(232, 90, 43, 0.25);
-                        }
-                        .btn-submit:hover {
-                            transform: translateY(-2px);
-                            box-shadow: 0 8px 18px rgba(232, 90, 43, 0.35);
-                        }
-                    </style>
-                    <div class="row g-4">
-                        <div class="col-12">
-                            <label class="premium-label">Cliente</label>
-                            <div class="input-group premium-input-group">
-                                <span class="input-group-text"><i class="bi bi-person"></i></span>
-                                <select name="id_cliente" class="form-select" required>
-                                    <option value="">Seleccionar Cliente...</option>
-                                    <?php foreach ($clientes as $cliente): ?>
-                                    <option value="<?php echo $cliente["id_cliente"]; ?>">
-                                        <?php echo htmlspecialchars($cliente["nombre"]); ?>
-                                    </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-12">
-                             <label class="premium-label">Doctor (Sala de Espera)</label>
-                             <div class="input-group premium-input-group">
-                                <span class="input-group-text"><i class="bi bi-heart-pulse"></i></span>
-                                <select name="id_medico" class="form-select" required>
-                                    <option value="">Asignar Doctor...</option>
-                                    <?php foreach ($doctores as $doctor): ?>
-                                    <option value="<?php echo $doctor['id']; ?>">
-                                        Dr. <?php echo htmlspecialchars($doctor['nombre'] . ' ' . $doctor['apellido']); ?>
-                                    </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="premium-label">Monto (Q)</label>
-                            <div class="input-group premium-input-group">
-                                <span class="input-group-text">Q</span>
-                                <input type="number" name="monto" step="0.01" class="form-control" placeholder="0.00" required style="font-weight: 600; color: #2D3748;">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="premium-label">Método de Pago</label>
-                            <div class="input-group premium-input-group">
-                                <span class="input-group-text"><i class="bi bi-credit-card"></i></span>
-                                <select name="tipo_pago" class="form-select" required>
-                                    <option value="Privado">Privado</option>
-                                    <option value="EPS">EPS</option>
-                                    <option value="IGS">IGS</option>
-                                    <option value="MAWDY">MAWDY</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-12">
-                             <label class="premium-label">Concepto / Motivo</label>
-                             <div class="input-group premium-input-group">
-                                <span class="input-group-text"><i class="bi bi-pencil-square"></i></span>
-                                <input type="text" name="descripcion" class="form-control" placeholder="Ej: Consulta General, Control, etc.">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer" style="padding: 20px 30px; background: white; border-top: 1px solid #f0f0f0; justify-content: space-between;">
-                    <button type="button" class="btn-modal-action btn-cancel" onclick="closeModal('manualChargeModal')">Cancelar</button>
-                    <button type="submit" class="btn-modal-action btn-submit px-5"><i class="bi bi-wallet2 me-2"></i>Realizar Cobro</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    
-    <!-- Pharmacy Modal -->
-    <div class="modal-overlay" id="pharmacyModal">
-        <div class="modal" style="max-width: 700px;">
-            <div class="modal-header">
-                <div>
-                    <h2 class="modal-title" style="margin:0; font-size: 1.5rem;">Despacho Farmacia</h2>
-                    <p style="margin:0; font-size: 0.9rem; opacity: 0.9; font-weight: 400;">Revisión de Receta</p>
-                </div>
-                <button class="modal-close" onclick="closeModal('pharmacyModal')">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-            <div class="modal-body p-0">
-                <div class="p-4 bg-light border-bottom">
-                    <h5 class="text-primary mb-0" id="pharmClientName">Cliente...</h5>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0" id="pharmacyTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th class="ps-4">Medicamento</th>
-                                <th>Cant</th>
-                                <th>Dosis</th>
-                            </tr>
-                        </thead>
-                        <tbody class="align-middle"></tbody>
-                    </table>
-            <div class="modal-body p-0">
-                <div class="p-4 border-bottom text-center" style="background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); color: white;">
-                    <div style="font-size: 3rem; margin-bottom: 0.5rem;"><i class="bi bi-capsule"></i></div>
-                    <h4 id="pharmClientName" style="font-weight: 700; margin:0; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">Cliente...</h4>
-                    <p style="margin:0; opacity: 0.9;">Revisión de Medicamentos</p>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0" id="pharmacyTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th class="ps-4">Medicamento</th>
-                                <th>Cant</th>
-                                <th>Dosis</th>
-                            </tr>
-                        </thead>
-                        <tbody class="align-middle"></tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="modal-footer bg-light">
-                 <button class="btn btn-outline-dark" onclick="printPharmacyTicket()">
-                    <i class="bi bi-printer me-2"></i> Imprimir Ticket
-                </button>
-                <button class="btn btn-success" onclick="goToDispensary()">
-                    <i class="bi bi-check-lg me-2"></i> Ingresar a Venta
-                </button>
-            </div>
-        </div>
-    </div>
-
-
-
     <!-- Bootstrap Bundle with Popper (Required for Tabs) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-    <script src="../../assets/js/ticket_printer.js"></script>
     <script>
         function openNewClienteModal() {
             document.getElementById('newClienteModal').classList.add('show');
@@ -1589,35 +1203,6 @@ try {
                 });
             });
         }
-        function processCharge(idOrden) {
-            if (!confirm('¿Confirmar cobro?')) return;
-
-            const formData = new FormData();
-            formData.append('id_orden', idOrden);
-
-            fetch('process_charge.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    alert('Cobro realizado exitosamente');
-                    
-                    // Print Ticket
-                    printTicket(result.ticket);
-                    
-                    // Reload to update list
-                    location.reload();
-                } else {
-                    alert('Error: ' + result.message);
-                }
-            })
-            .catch(error => {
-                console.error(error);
-                alert('Error al procesar el cobro');
-            });
-        }
     </script>
     <script>
         function logoutWithEffect(e) {
@@ -1646,233 +1231,7 @@ try {
             });
         }
 
-        // Real-time Pending Charges Notification
-        let lastWaitingCount = <?php echo count($cobrosPendientes); ?>;
-        const notificationSound = new Audio('../../assets/audio/notification.mp3'); 
-        // Use a publicly available sound as fallback if local one is empty/invalid
-        const fallbackSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-
-        function playNotificationSound() {
-            notificationSound.play().catch(e => {
-                console.log("Local audio failed, trying fallback", e);
-                fallbackSound.play().catch(err => console.log("Audio play failed", err));
-            });
-        }
-
-        setInterval(() => {
-            fetch('check_charges.php')
-                .then(response => response.json())
-                .then(data => {
-                    const newRows = data.count;
-                    const listContainer = document.querySelector('.queue-list');
-                    
-                    // Always update the list content to ensure it's in sync
-                    if (listContainer) {
-                        listContainer.innerHTML = data.html;
-                    }
-
-                    if (newRows > lastWaitingCount) {
-                        // New charge detected!
-                        playNotificationSound();
-                        
-                        Swal.fire({
-                            title: '¡Nuevo Cobro Pendiente!',
-                            text: 'Se ha asignado un nuevo cobro a un cliente.',
-                            icon: 'info',
-                            toast: true,
-                            position: 'top-end',
-                            showConfirmButton: false,
-                            timer: 5000,
-                            timerProgressBar: true
-                        });
-                    }
-                    lastWaitingCount = newRows;
-                });
-        }, 10000); // Check every 10 seconds
-
-        // Pharmacy Functions
-        let currentPharmItems = [];
-        let currentPharmPatient = '';
-        let currentPharmacyOrdenId = null;
-
-        function openPharmacyModal(idOrden, patientName) {
-            currentPharmacyOrdenId = idOrden;
-            currentPharmPatient = patientName;
-            document.getElementById('pharmPatientName').innerText = patientName;
-            
-            // Show loading state
-            const tbody = document.querySelector('#pharmacyTable tbody');
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center p-4"><div class="spinner-border text-primary" role="status"></div></td></tr>';
-            document.getElementById('pharmacyModal').classList.add('show');
-            
-            // Fetch prescription details
-            fetch('get_prescription.php?id_orden=' + idOrden)
-                .then(r => r.json())
-                .then(items => {
-                    currentPharmItems = items;
-                    tbody.innerHTML = '';
-                    if (items.length > 0) {
-                        items.forEach(item => {
-                            tbody.innerHTML += `
-                                <tr>
-                                    <td class="ps-4" style="font-weight: 500;">
-                                        <i class="bi bi-capsule-pill me-2 text-warning"></i> ${item.medicamento}
-                                    </td>
-                                    <td><span class="badge bg-primary rounded-pill">${item.cantidad}</span></td>
-                                    <td class="text-muted small">${item.dosis}</td>
-                                </tr>
-                            `;
-                        });
-                    } else {
-                        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted p-4">Sin medicamentos (Consulta sin receta)</td></tr>';
-                    }
-                })
-                .catch(err => {
-                    console.error(err);
-                    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error al cargar receta</td></tr>';
-                });
-        }
-
-        function printPharmacyTicket() {
-             if (currentPharmItems.length === 0) {
-                 Swal.fire('Info', 'No hay medicamentos para imprimir', 'info');
-                 return;
-             }
-             
-            const width = 300;
-            const height = 600;
-            const left = (screen.width - width) / 2;
-            const top = (screen.height - height) / 2;
-            const printWindow = window.open('', '_blank', `width=${width},height=${height},top=${top},left=${left}`);
-            
-            const date = new Date().toLocaleDateString();
-            
-            let itemsHtml = '';
-            currentPharmItems.forEach((item, index) => {
-                itemsHtml += `
-                    <div style="margin-bottom: 10px; border-bottom: 1px dashed #ccc; padding-bottom: 5px;">
-                        <strong>${index + 1}. ${item.medicamento}</strong> ( Cant: ${item.cantidad} )<br>
-                        <small>${item.dosis}</small>
-                    </div>
-                `;
-            });
-
-            printWindow.document.open();
-            printWindow.document.write('<!DOCTYPE html>');
-            printWindow.document.write(`
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Despacho Farmacia</title>
-                    <style>
-                        body { font-family: 'Courier New', monospace; font-size: 12px; padding: 10px; margin: 0; width: 280px; }
-                        .header { text-align: center; margin-bottom: 20px; }
-                        .info { margin-bottom: 15px; font-size: 11px; }
-                        .items { margin-bottom: 20px; }
-                        .footer { text-align: center; margin-top: 30px; font-size: 10px; border-top: 1px solid #000; padding-top: 5px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <h3 style="margin:0;">CLINOVA</h3>
-                        <p style="margin:5px 0;">Despacho de Farmacia</p>
-                    </div>
-                    <div class="info">
-                        <strong>Fecha:</strong> ${date}<br>
-                        <strong>Cliente:</strong> ${currentPharmPatient}
-                    </div>
-                    <div class="items">
-                        ${itemsHtml}
-                    </div>
-                    <div class="footer">
-                        Verificado por Farmacia
-                    </div>
-                    <script>
-                        window.onload = function() {
-                            window.print();
-                            // setTimeout(() => window.close(), 1000);
-                        }
-                    <\/script>
-                </body>
-                </html>
-            `);
-            printWindow.document.close();
-        }
-
-        function goToDispensary() {
-            if (!currentPharmacyOrdenId) return;
-            
-            // Mark as delivered/processed
-            const fd = new FormData();
-            fd.append('id_orden', currentPharmacyOrdenId);
-            
-            fetch('finish_pharmacy_delivery.php', {
-                method: 'POST',
-                body: fd
-            })
-            .then(r => r.json())
-            .then(res => {
-                if (res.success) {
-                    window.location.href = '../dispensary/index.php';
-                } else {
-                    alert('Error al procesar: ' + res.message);
-                }
-            })
-            .catch(e => {
-                console.error(e);
-                // Fallback redirect even if error
-                window.location.href = '../dispensary/index.php';
-            });
-        }
-
-        function openManualChargeModal() {
-            document.getElementById('manualChargeModal').classList.add('show');
-        }
-
-        function submitManualCharge(e) {
-            e.preventDefault();
-            const form = e.target;
-            const formData = new FormData(form);
-
-            Swal.fire({
-                title: 'Procesando...',
-                text: 'Registrando cobro y asignando turno...',
-                allowOutsideClick: false,
-                didOpen: () => Swal.showLoading()
-            });
-
-            fetch('save_manual_charge.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: '¡Cobro Exitoso!',
-                        text: 'Cliente enviado a Cobros',
-                        timer: 2000,
-                        showConfirmButton: false
-                    }).then(() => {
-                        closeModal('manualChargeModal');
-                        form.reset();
-                        // No need to reload page immediately unless we want to update stats, 
-                        // but the waiting room is on another page anyway.
-                        // Ideally relocate to Patients or just stay here.
-                    });
-                } else {
-                    throw new Error(data.message);
-                }
-            })
-            .catch(error => {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: error.message
-                });
-            });
-        }
     </script>
+    <?php include __DIR__ . '/../includes/ui_feedback.php'; ?>
 </body>
 </html>

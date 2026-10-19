@@ -87,9 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $idCompra = $conn->lastInsertId();
             
-            // CREAR REGISTRO EN INVENTARIO COMO "PENDIENTE"
-            // El usuario solicitó: "como producto en espera de que llegue... no se podrá utilizar"
-            $estadoInventario = 'Pendiente';
+            // CREAR REGISTRO EN INVENTARIO: siempre Ingresado (ingreso automático al comprar)
+            $estadoInventario = 'Ingresado';
             
             $stmtInventario = $conn->prepare("
                 INSERT INTO inventario (

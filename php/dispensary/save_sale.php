@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../../config/database.php';
+require_once '../../includes/functions.php';
 
 header('Content-Type: application/json');
 
@@ -25,16 +26,18 @@ try {
     $conn->beginTransaction();
     
     // Insertar venta
+    $numeroVenta = generarNumeroVenta($conn);
     $stmt =
 
  $conn->prepare("
         INSERT INTO ventas (
-            id_usuario, id_sucursal, cliente_nombre, cliente_nit,
+            numero_venta, id_usuario, id_sucursal, cliente_nombre, cliente_nit,
             venta_personal, total, descuento, total_final, estado
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Completada')
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Completada')
     ");
     
     $stmt->execute([
+        $numeroVenta,
         $data['id_usuario'],
         $data['id_sucursal'],
         $data['cliente_nombre'],
@@ -122,7 +125,8 @@ try {
     echo json_encode([
         'success' => true,
         'message' => 'Venta registrada exitosamente',
-        'id_venta' => $idVenta
+        'id_venta' => $idVenta,
+        'numero_venta' => $numeroVenta
     ]);
     
 } catch (Exception $e) {

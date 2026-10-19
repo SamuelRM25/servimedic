@@ -23,6 +23,12 @@ $guia_numero = trim($_POST['guia_numero'] ?? '');
 $guia_estado = $_POST['guia_estado'] ?? 'Pendiente';
 $guia_observaciones = trim($_POST['guia_observaciones'] ?? '');
 
+// Regla de negocio: si hay número de guía y el estado sigue en "Pendiente",
+// se marca automáticamente como "Creada".
+if ($guia_numero !== '' && $guia_estado === 'Pendiente') {
+    $guia_estado = 'Creada';
+}
+
 if ($id_pedido <= 0) {
     echo json_encode(['ok' => false, 'error' => 'id_pedido requerido']);
     exit;

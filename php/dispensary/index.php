@@ -1209,6 +1209,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                 formas_pago: paymentMethods
             };
 
+            showLoading('Procesando venta...');
             try {
                 const response = await fetch('save_sale.php', {
                     method: 'POST',
@@ -1219,7 +1220,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                 const result = await response.json();
                 
                 if (result.success) {
-                    alert('Venta completada exitosamente');
+                    uiToast('Venta ' + (result.numero_venta ? result.numero_venta + ' ' : '') + 'completada exitosamente', 'success');
                     
                     // Print Ticket
                     printTicket({
@@ -1255,13 +1256,16 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                         </div>
                     `;
                 } else {
-                    alert('Error: ' + result.message);
+                    uiToast('Error: ' + result.message, 'error', 5000);
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error al procesar la venta');
+                uiToast('Error al procesar la venta', 'error', 5000);
+            } finally {
+                hideLoading();
             }
         });
     </script>
+    <?php include __DIR__ . '/../includes/ui_feedback.php'; ?>
 </body>
 </html>

@@ -195,6 +195,27 @@ function generarNumeroCotizacion(PDO $conn): string {
     return $prefix . str_pad((string) $next, 4, '0', STR_PAD_LEFT);
 }
 
+function generarNumeroVenta(PDO $conn): string {
+    $tzOriginal = date_default_timezone_get();
+    date_default_timezone_set('America/Guatemala');
+    $today = date('Ymd');
+    date_default_timezone_set($tzOriginal);
+
+    $prefix = 'VEN-' . $today . '-';
+    $stmt = $conn->prepare("
+        SELECT numero_venta FROM ventas
+        WHERE numero_venta LIKE ?
+        ORDER BY id_venta DESC LIMIT 1
+    ");
+    $stmt->execute([$prefix . '%']);
+    $last = $stmt->fetchColumn();
+    $next = 1;
+    if ($last && preg_match('/-(\d+)$/', $last, $m)) {
+        $next = ((int) $m[1]) + 1;
+    }
+    return $prefix . str_pad((string) $next, 4, '0', STR_PAD_LEFT);
+}
+
 /**
  * Formatea un timestamp de la BD (guardado en UTC) como fecha d/m/y en
  * la zona horaria de negocio (America/Guatemala).

@@ -433,53 +433,24 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
 
         /* ... (rest of CSS) ... */
 
-        /* Logic update for reception button */
-        /* Inside the foreach loop */
-                            <td>
-                                <?php 
-                                // Logic to determine if "Receive" button should be shown
-                                // Show if status is 'Pendiente' OR if it doesn't have a invoice number yet (and it's not a consumer final that was auto-accepted, though user wants ALL to be received)
-                                // User said: "independientemente de que sea factura, nota de envio o consumidor final, se tenga que recibir"
-                                // So we check if it's NOT received yet. Assuming 'estado_ingreso' tracks this.
-                                // If 'estado_ingreso' is missing, we assume it needs reception if it was just added.
-                                // Let's rely on 'estado_ingreso' being 'Pendiente' or null/empty.
-                                $needsReception = ($med['estado_ingreso'] ?? 'Pendiente') === 'Pendiente';
-                                
-                                if ($needsReception): ?>
-                                <button class="action-btn" style="background: #C6F6D5; color: #22543D;" 
-                                    onclick="openReceiveModal(<?php echo $med['id_inventario']; ?>, '<?php echo htmlspecialchars($med['nom_medicamento']); ?>')"
-                                    title="Recibir Producto">
-                                    <i class="bi bi-check-lg"></i>
-                                </button>
-                                <?php endif; ?>
-                            </td>
-
-        /* ... (rest of HTML) ... */
+        /* Recepción automática al comprar — ya no se muestra el botón "Recibir" */
 
     <script>
         // ...
         
         function closeModal(modalId = 'medicineModal') {
-            // If modalId is passed, close that specific modal. 
-            // If not, default to 'medicineModal' (for backward compatibility with existing calls)
-            // But wait, the existing calls for medicineModal use closeModal() without args.
-            // And receiveModal uses closeModal('receiveModal').
-            
             const modal = document.getElementById(modalId);
             if (modal) {
                 modal.classList.remove('show');
-                
-                // Reset forms if applicable
+
                 if (modalId === 'medicineModal') {
                     document.getElementById('medicineForm').reset();
                     document.getElementById('id_inventario').value = '';
                     document.getElementById('modalTitle').textContent = 'Agregar Medicamento';
-                } else if (modalId === 'receiveModal') {
-                    // Reset receive form if needed
-                     document.getElementById('receive_id_inventario').value = '';
-                     document.getElementById('receive_product_name').value = '';
-                     // We should probably reset the invoice input too
-                     document.querySelector('#receiveModal input[name="numero_factura"]').value = '';
+                } else if (modalId === 'updateExpModal') {
+                    document.getElementById('updateExp_id_inventario').value = '';
+                    document.getElementById('updateExp_product_name').value = '';
+                    document.getElementById('updateExp_fecha').value = '';
                 }
             }
         }
@@ -908,33 +879,26 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                             </td>
                             <?php if (in_array($userRole, ['Administrador', 'Farmacia', 'Mayoreo'])): ?>
                             <td>
-                                <?php if ($status === 'Pendiente'): ?>
-                                    <button class="action-btn btn-receive" onclick="openReceiveModal(<?php echo $med['id_inventario']; ?>, '<?php echo htmlspecialchars($med['nom_medicamento']); ?>')" title="Recibir">
-                                        <i class="bi bi-box-seam"></i>
-                                    </button>
-                                <?php elseif ($status === 'En Traslado'): ?>
-                                    <button class="action-btn btn-receive" onclick="openReceiveModal(<?php echo $med['id_inventario']; ?>, '<?php echo htmlspecialchars($med['nom_medicamento']); ?>')" title="Recibir Traslado">
-                                        <i class="bi bi-box-arrow-in-down"></i>
-                                    </button>
-                                <?php else: ?>
-                                    <button class="action-btn action-btn-edit edit-btn" 
-                                        data-id="<?php echo $med['id_inventario']; ?>"
-                                        data-med='<?php echo htmlspecialchars(json_encode($med)); ?>'
-                                        title="Editar">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                    <button class="action-btn btn-transfer" 
-                                        onclick="openTransferModal(<?php echo $med['id_inventario']; ?>, '<?php echo htmlspecialchars($med['nom_medicamento']); ?>', <?php echo $med['cantidad_med']; ?>)"
-                                        title="Trasladar">
-                                        <i class="bi bi-arrow-left-right"></i>
-                                    </button>
-                                    <?php if ($userRole === 'Administrador'): ?>
-                                    <button class="action-btn action-btn-delete delete-btn" 
-                                        data-id="<?php echo $med['id_inventario']; ?>"
-                                        title="Eliminar">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                    <?php endif; ?>
+                                <button class="action-btn action-btn-update-exp" onclick="openUpdateExpModal(<?php echo $med['id_inventario']; ?>, '<?php echo htmlspecialchars(addslashes($med['nom_medicamento'])); ?>', '<?php echo $med['fecha_vencimiento'] ?? ''; ?>')" title="Actualizar fecha de vencimiento">
+                                    <i class="bi bi-calendar-event"></i>
+                                </button>
+                                <button class="action-btn action-btn-edit edit-btn" 
+                                    data-id="<?php echo $med['id_inventario']; ?>"
+                                    data-med='<?php echo htmlspecialchars(json_encode($med)); ?>'
+                                    title="Editar">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="action-btn btn-transfer" 
+                                    onclick="openTransferModal(<?php echo $med['id_inventario']; ?>, '<?php echo htmlspecialchars($med['nom_medicamento']); ?>', <?php echo $med['cantidad_med']; ?>)"
+                                    title="Trasladar">
+                                    <i class="bi bi-arrow-left-right"></i>
+                                </button>
+                                <?php if ($userRole === 'Administrador'): ?>
+                                <button class="action-btn action-btn-delete delete-btn" 
+                                    data-id="<?php echo $med['id_inventario']; ?>"
+                                    title="Eliminar">
+                                    <i class="bi bi-trash"></i>
+                                </button>
                                 <?php endif; ?>
                             </td>
                             <?php endif; ?>
@@ -953,60 +917,32 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
         </div>
     </div>
 
-    <!-- Receive Product Modal -->
-    <div class="modal-overlay" id="receiveModal">
-        <div class="modal">
+    <!-- Update Expiration Date Modal -->
+    <div class="modal-overlay" id="updateExpModal">
+        <div class="modal" style="max-width:420px;">
             <div class="modal-header">
-                <h2 class="modal-title">Recibir Producto</h2>
-                <button class="modal-close" onclick="closeModal('receiveModal')">
+                <h2 class="modal-title"><i class="bi bi-calendar-event"></i> Actualizar Vencimiento</h2>
+                <button class="modal-close" onclick="closeModal('updateExpModal')">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
-            <form action="receive_products.php" method="POST">
-                <input type="hidden" name="id_inventario" id="receive_id_inventario">
+            <form action="update_expiration.php" method="POST" onsubmit="showLoading('Actualizando vencimiento...')">
+                <input type="hidden" name="id_inventario" id="updateExp_id_inventario">
                 <div class="modal-body">
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0.75rem;">
                         <label class="form-label">Producto</label>
-                        <input type="text" id="receive_product_name" class="form-control" readonly style="background: var(--color-bg);">
+                        <input type="text" id="updateExp_product_name" class="form-control" readonly style="background: var(--color-bg);">
                     </div>
-                    
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label class="form-label">Código de Barras</label>
-                                <input type="text" name="codigo_barras" id="receive_codigo_barras" class="form-control" placeholder="Escanear...">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label class="form-label">Fecha Vencimiento</label>
-                                <input type="date" name="fecha_vencimiento" id="receive_fecha_vencimiento" class="form-control">
-                            </div>
-                        </div>
-                    </div>
-
                     <div class="form-group">
-                        <label class="form-label">Sucursal</label>
-                        <select name="id_sucursal" id="receive_id_sucursal" class="form-control form-select">
-                            <?php foreach ($sucursales as $sucursal): ?>
-                                <option value="<?php echo $sucursal['id_sucursal']; ?>">
-                                    <?php echo htmlspecialchars($sucursal['nombre']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Número de Factura / Envío *</label>
-                        <input type="text" name="numero_factura" id="receive_numero_factura" class="form-control" required placeholder="Ingrese el número de factura o envío real">
-                        <small style="color: var(--color-text-light);">Este número actualizará la referencia de compra.</small>
+                        <label class="form-label">Nueva fecha de vencimiento</label>
+                        <input type="date" name="fecha_vencimiento" id="updateExp_fecha" class="form-control" required>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('receiveModal')">Cancelar</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('updateExpModal')">Cancelar</button>
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-lg"></i>
-                        Confirmar Recepción
+                        Actualizar
                     </button>
                 </div>
             </form>
@@ -1022,7 +958,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
-            <form id="medicineForm" method="POST" action="save_medicine.php">
+            <form id="medicineForm" method="POST" action="save_medicine.php" onsubmit="showLoading('Guardando medicamento...')">
                 <input type="hidden" name="id_inventario" id="id_inventario">
                 <div class="modal-body">
                     <div class="form-group mb-3">
@@ -1125,7 +1061,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
-            <form action="update_expiration.php" method="POST">
+            <form action="update_expiration.php" method="POST" onsubmit="showLoading('Actualizando fecha...')">
                 <input type="hidden" name="id_inventario" id="update_date_id">
                 <div class="modal-body">
                     <div class="form-group">
@@ -1152,7 +1088,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
-            <form action="transfer_product.php" method="POST">
+            <form action="transfer_product.php" method="POST" onsubmit="showLoading('Procesando traslado...')">
                 <input type="hidden" name="id_inventario" id="transfer_id">
                 <div class="modal-body">
                     <div class="alert alert-info" style="background: #ebf8ff; border-left: 4px solid #1FA8FF; padding: 10px; font-size: 0.9rem;">
@@ -1205,21 +1141,19 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
         }
 
         function closeModal(modalId = null) {
-            // Si no se pasa ID, intentamos cerrar el modal de medicamento por defecto
             const id = modalId || 'medicineModal';
             const modal = document.getElementById(id);
-            
+
             if (modal) {
                 modal.classList.remove('show');
-                
-                // Limpiar formularios específicos
+
                 if (id === 'medicineModal') {
                     document.getElementById('medicineForm').reset();
                     document.getElementById('id_inventario').value = '';
-                } else if (id === 'receiveModal') {
-                    document.getElementById('receive_id_inventario').value = '';
-                    document.getElementById('receive_product_name').value = '';
-                    document.querySelector('#receiveModal input[name="numero_factura"]').value = '';
+                } else if (id === 'updateExpModal') {
+                    document.getElementById('updateExp_id_inventario').value = '';
+                    document.getElementById('updateExp_product_name').value = '';
+                    document.getElementById('updateExp_fecha').value = '';
                 }
             }
         }
@@ -1285,8 +1219,13 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
         });
 
         document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                if (confirm('¿Está seguro de eliminar este medicamento?')) {
+            btn.addEventListener('click', async function() {
+                const ok = await uiConfirm('¿Está seguro de eliminar este medicamento?', {
+                    title: 'Eliminar medicamento',
+                    confirmText: 'Sí, eliminar'
+                });
+                if (ok) {
+                    showLoading('Eliminando medicamento...');
                     window.location.href = 'delete_medicine.php?id=' + this.dataset.id;
                 }
             });
@@ -1420,15 +1359,11 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             document.getElementById('transferModal').classList.add('show');
         }
 
-        function openReceiveModal(id, name) {
-            document.getElementById('receive_id_inventario').value = id;
-            document.getElementById('receive_product_name').value = name;
-            // Clear new fields
-            document.getElementById('receive_codigo_barras').value = '';
-            document.getElementById('receive_fecha_vencimiento').value = '';
-            document.getElementById('receive_numero_factura').value = '';
-            
-            document.getElementById('receiveModal').classList.add('show');
+        function openUpdateExpModal(id, name, currentDate) {
+            document.getElementById('updateExp_id_inventario').value = id;
+            document.getElementById('updateExp_product_name').value = name;
+            document.getElementById('updateExp_fecha').value = currentDate || '';
+            document.getElementById('updateExpModal').classList.add('show');
         }
 
         // Close modals on overlay click
@@ -1440,5 +1375,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             });
         });
     </script>
+    <?php include __DIR__ . '/../includes/whatsapp_float.php'; ?>
+    <?php include __DIR__ . '/../includes/ui_feedback.php'; ?>
 </body>
 </html>

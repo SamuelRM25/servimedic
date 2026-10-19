@@ -70,6 +70,7 @@ try {
         $stmt = $conn->prepare("
             UPDATE pedidos SET
                 cliente_nombre = ?, cliente_telefono = ?, cliente_direccion = ?,
+                id_cliente = ?,
                 condiciones_pago = ?, tipo_documento = ?, tipo_pago_estado = ?,
                 metodo_pago = ?, subtotal = ?, cargo_cod = 0.00,
                 subtotal_original = ?, descuento = 0.00, total = ?
@@ -79,6 +80,7 @@ try {
             $data['cliente_nombre'],
             $data['cliente_telefono'] ?? null,
             $data['cliente_direccion'] ?? null,
+            !empty($data['id_cliente']) ? (int) $data['id_cliente'] : null,
             $data['condiciones_pago'] ?? null,
             $data['tipo_documento'],
             $data['tipo_pago_estado'],
@@ -141,17 +143,18 @@ try {
     $stmt = $conn->prepare("
         INSERT INTO pedidos (
             id_usuario, id_sucursal, es_cotizacion, cotizacion_numero,
-            cliente_nombre, cliente_telefono, cliente_direccion, condiciones_pago,
+            id_cliente, cliente_nombre, cliente_telefono, cliente_direccion, condiciones_pago,
             tipo_documento, tipo_pago_estado, metodo_pago,
             subtotal, cargo_cod, subtotal_original, descuento, total,
             estado_pedido, estado_pago
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $_SESSION['user_id'],
         $userSucursal,
         $esCotizacion ? 1 : 0,
         $cotizacionNumero,
+        !empty($data['id_cliente']) ? (int) $data['id_cliente'] : null,
         $data['cliente_nombre'],
         $data['cliente_telefono'] ?? null,
         $data['cliente_direccion'] ?? null,
@@ -207,20 +210,26 @@ try {
         }
     }
 
-    // Crear venta automáticamente si el pedido es al contado (no cotizaciones)
-    if (!$esCotizacion && $data['tipo_pago_estado'] === 'Al Contado') {
+    // Crear la venta automáticamente (no cotizaciones).
+    // Las ventas a crédito también generan registro para Reportes y su
+    // número VEN-...; su forma de pago se registra al marcar como Pagado.
+    if (!$esCotizacion) {
+        $esCredito = ($data['tipo_pago_estado'] === 'Crédito');
+        $numeroVenta = generarNumeroVenta($conn);
         $stmtVenta = $conn->prepare("
             INSERT INTO ventas (
-                id_usuario, id_sucursal, cliente_nombre, cliente_nit, venta_personal,
+                numero_venta, id_usuario, id_sucursal, cliente_nombre, cliente_nit, venta_personal,
                 tipo_documento, es_credito, id_pedido, total, descuento, total_final, estado
-            ) VALUES (?, ?, ?, ?, 0, ?, 0, ?, ?, ?, ?, 'Completada')
+            ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'Completada')
         ");
         $stmtVenta->execute([
+            $numeroVenta,
             $_SESSION['user_id'],
             $userSucursal,
             $data['cliente_nombre'],
             'CF',
             $data['tipo_documento'],
+            $esCredito ? 1 : 0,
             $idPedido,
             $subtotal,
             $descuento,
@@ -244,11 +253,14 @@ try {
             ]);
         }
 
-        $stmtFormaPago = $conn->prepare("
-            INSERT INTO formas_pago (id_venta, tipo_pago, monto)
-            VALUES (?, ?, ?)
-        ");
-        $stmtFormaPago->execute([$idVenta, formaPagoDesdeMetodo($metodoPago), $total]);
+        // La forma de pago solo se registra si el cobro ya se realizó (contado).
+        if (!$esCredito) {
+            $stmtFormaPago = $conn->prepare("
+                INSERT INTO formas_pago (id_venta, tipo_pago, monto)
+                VALUES (?, ?, ?)
+            ");
+            $stmtFormaPago->execute([$idVenta, formaPagoDesdeMetodo($metodoPago), $total]);
+        }
 
         $stmtUpdatePedido = $conn->prepare("UPDATE pedidos SET id_venta = ? WHERE id_pedido = ?");
         $stmtUpdatePedido->execute([$idVenta, $idPedido]);
@@ -262,6 +274,7 @@ try {
         'id_pedido' => $idPedido,
         'es_cotizacion' => $esCotizacion,
         'cotizacion_numero' => $cotizacionNumero,
+        'numero_venta' => $numeroVenta ?? null,
         'subtotal' => $subtotal,
         'descuento' => $descuento,
         'total' => $total

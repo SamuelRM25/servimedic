@@ -355,6 +355,7 @@ CREATE TABLE `pedidos` (
   `cliente_nombre` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `cliente_telefono` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `cliente_direccion` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+  `id_cliente` int DEFAULT NULL,
   `condiciones_pago` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `tipo_documento` enum('Factura','Nota de Envío') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Nota de Envío',
   `tipo_pago_estado` enum('Al Contado','Crédito') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Al Contado',
@@ -369,6 +370,11 @@ CREATE TABLE `pedidos` (
   `id_venta` int DEFAULT NULL COMMENT 'Relación con venta generada',
   `cotizacion_origen_id` int DEFAULT NULL,
   `observaciones` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+  `transportista` enum('Forza Delivery','Cargo Expreso','Otro') COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `guia_numero` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `guia_estado` enum('Pendiente','Creada','En tránsito','Entregada','Devuelta') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Pendiente',
+  `guia_fecha_creacion` datetime DEFAULT NULL,
+  `guia_observaciones` text COLLATE utf8mb4_general_ci,
   `fecha_pedido` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `fecha_entrega` date DEFAULT NULL,
   PRIMARY KEY (`id_pedido`),
@@ -379,6 +385,7 @@ CREATE TABLE `pedidos` (
   KEY `idx_estado_pago` (`estado_pago`),
   KEY `idx_cotizacion` (`es_cotizacion`,`estado_pedido`),
   KEY `idx_cot_numero` (`cotizacion_numero`),
+  KEY `idx_pedidos_cliente` (`id_cliente`),
   CONSTRAINT `fk_pedido_sucursal` FOREIGN KEY (`id_sucursal`) REFERENCES `sucursales` (`id_sucursal`) ON DELETE RESTRICT,
   CONSTRAINT `fk_pedido_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -529,6 +536,7 @@ DROP TABLE IF EXISTS `ventas`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `ventas` (
   `id_venta` int NOT NULL AUTO_INCREMENT,
+  `numero_venta` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `id_usuario` int NOT NULL,
   `id_sucursal` int NOT NULL,
   `cliente_nombre` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
@@ -544,6 +552,7 @@ CREATE TABLE `ventas` (
   `observaciones` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
   `fecha_venta` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_venta`),
+  UNIQUE KEY `numero_venta` (`numero_venta`),
   KEY `fk_venta_usuario` (`id_usuario`),
   KEY `fk_venta_sucursal` (`id_sucursal`),
   KEY `idx_fecha_venta` (`fecha_venta`),

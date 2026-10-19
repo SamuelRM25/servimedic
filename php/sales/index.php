@@ -397,7 +397,14 @@ try {
                     <tbody id="ventasTable">
                         <?php foreach ($ventas as $venta): ?>
                         <tr>
-                            <td><?php echo $venta['id_venta']; ?></td>
+                            <td>
+                                <?php if (!empty($venta['numero_venta'])): ?>
+                                    <strong><?php echo htmlspecialchars($venta['numero_venta']); ?></strong>
+                                    <br><small style="color: var(--color-text-light);">#<?php echo $venta['id_venta']; ?></small>
+                                <?php else: ?>
+                                    <?php echo $venta['id_venta']; ?>
+                                <?php endif; ?>
+                            </td>
                             <td><?php echo fechaGT($venta['fecha_venta'], 'd/m/Y H:i'); ?></td>
                             <td>
                                 <strong><?php echo htmlspecialchars($venta['cliente_nombre']); ?></strong>
@@ -514,5 +521,6 @@ try {
         // Set date for print header
         document.querySelector('.page-header').setAttribute('data-date', new Date().toLocaleDateString());
     </script>
+    <?php include __DIR__ . '/../includes/ui_feedback.php'; ?>
 </body>
 </html>

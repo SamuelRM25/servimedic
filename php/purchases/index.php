@@ -24,7 +24,32 @@ try {
     ");
     $stmt->execute();
     $compras = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+
+    // Agrupar compras por proveedor (casa_farmaceutica)
+    $porProveedor = [];
+    foreach ($compras as $compra) {
+        $nombreProv = trim($compra['casa_farmaceutica'] ?? '');
+        if ($nombreProv === '') $nombreProv = 'Sin proveedor';
+        $key = mb_strtolower($nombreProv, 'UTF-8');
+        if (!isset($porProveedor[$key])) {
+            $porProveedor[$key] = [
+                'nombre' => $nombreProv,
+                'total' => 0.0,
+                'abonado' => 0.0,
+                'saldo' => 0.0,
+                'items' => []
+            ];
+        }
+        $porProveedor[$key]['total'] += (float)$compra['total'];
+        $porProveedor[$key]['abonado'] += (float)$compra['abonado'];
+        $porProveedor[$key]['saldo'] += (float)$compra['saldo'];
+        $porProveedor[$key]['items'][] = $compra;
+    }
+    uasort($porProveedor, fn($a, $b) => $b['total'] <=> $a['total']);
+
+    $provTotalGeneral = array_sum(array_column($porProveedor, 'total'));
+    $provSaldoGeneral = array_sum(array_column($porProveedor, 'saldo'));
+
 } catch (Exception $e) {
     die("Error: " . $e->getMessage());
 }
@@ -553,6 +578,180 @@ $userRole = $_SESSION['rol'] ?? '';
             border-bottom: 2px solid var(--color-orange);
             display: inline-block;
         }
+
+        .badge-info { background: #BEE3F8; color: #2C5282; }
+        .badge-secondary { background: #E2E8F0; color: #4A5568; }
+
+        /* Pestañas */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            background: var(--color-white);
+            padding: 0.5rem;
+            border-radius: 14px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            width: fit-content;
+        }
+
+        .tab {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.25rem;
+            border: none;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--color-text-light);
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .tab:hover { background: var(--color-bg); color: var(--color-text); }
+        .tab.active { background: var(--color-orange); color: #fff; box-shadow: 0 4px 12px rgba(255, 61, 0, 0.3); }
+
+        .tab-count {
+            background: rgba(0, 0, 0, 0.1);
+            padding: 0.1rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+        }
+
+        .tab.active .tab-count { background: rgba(255, 255, 255, 0.25); }
+
+        /* Panel por proveedor */
+        .provider-summary {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.25rem;
+            background: linear-gradient(135deg, #FFF5F0, #F0F8FF);
+            border-radius: 14px;
+            border: 1px solid var(--color-border);
+        }
+
+        .provider-summary-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+
+        .provider-summary-item .label {
+            font-size: 0.78rem;
+            color: var(--color-text-light);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .provider-summary-item strong { font-size: 1.25rem; color: var(--color-text); }
+
+        .provider-summary-hint {
+            margin-left: auto;
+            font-size: 0.82rem;
+            color: var(--color-text-light);
+        }
+
+        .provider-card {
+            background: var(--color-white);
+            border: 1px solid var(--color-border);
+            border-radius: 14px;
+            margin-bottom: 0.85rem;
+            overflow: hidden;
+            transition: box-shadow 0.25s ease, border-color 0.25s ease;
+        }
+
+        .provider-card:hover { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); }
+        .provider-card.open { border-color: var(--color-blue); box-shadow: 0 8px 24px rgba(31, 168, 255, 0.15); }
+
+        .provider-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s ease;
+        }
+
+        .provider-header:hover { background: #FAFCFF; }
+
+        .provider-info { display: flex; align-items: center; gap: 0.9rem; }
+
+        .provider-chevron {
+            font-size: 0.9rem;
+            color: var(--color-text-light);
+            transition: transform 0.3s ease;
+        }
+
+        .provider-card.open .provider-chevron { transform: rotate(90deg); color: var(--color-blue); }
+
+        .provider-avatar {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--color-orange), var(--color-blue));
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .provider-name { font-size: 1.02rem; color: var(--color-text); }
+
+        .provider-meta { font-size: 0.8rem; color: var(--color-text-light); margin-top: 0.15rem; }
+
+        .provider-totals { display: flex; align-items: center; gap: 1.75rem; }
+
+        .provider-total-item { display: flex; flex-direction: column; align-items: flex-end; gap: 0.1rem; }
+
+        .provider-total-label {
+            font-size: 0.72rem;
+            color: var(--color-text-light);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .provider-body {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease;
+            border-top: 1px solid transparent;
+        }
+
+        .provider-card.open .provider-body { border-top-color: var(--color-border); }
+
+        .provider-detail-table { width: 100%; border-collapse: collapse; }
+
+        .provider-detail-table th {
+            padding: 0.7rem 0.75rem;
+            text-align: left;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--color-text-light);
+            text-transform: uppercase;
+            background: #F8FAFC;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .provider-detail-table td {
+            padding: 0.7rem 0.75rem;
+            font-size: 0.88rem;
+            border-bottom: 1px solid var(--color-border);
+            vertical-align: middle;
+        }
+
+        .provider-detail-total td { background: #F8FAFC; font-size: 0.9rem; }
+
+        .provider-card.hidden-by-filter { display: none; }
     </style>
 </head>
 <body>
@@ -592,6 +791,18 @@ $userRole = $_SESSION['rol'] ?? '';
             </div>
         </div>
 
+        <!-- Pestañas -->
+        <div class="tabs">
+            <button class="tab active" id="tabTodas" onclick="switchPurchasesTab('todas')">
+                <i class="bi bi-list-ul"></i> Todas las Compras
+                <span class="tab-count"><?php echo count($compras); ?></span>
+            </button>
+            <button class="tab" id="tabProveedores" onclick="switchPurchasesTab('proveedores')">
+                <i class="bi bi-building"></i> Por Proveedor
+                <span class="tab-count"><?php echo count($porProveedor); ?></span>
+            </button>
+        </div>
+
         <!-- Search Section -->
         <div class="search-section">
             <div class="search-box">
@@ -605,7 +816,7 @@ $userRole = $_SESSION['rol'] ?? '';
         </div>
 
         <!-- Table -->
-        <div class="table-container">
+        <div class="table-container" id="panelTodas">
             <div class="table-wrapper">
                 <table>
                     <thead>
@@ -756,6 +967,138 @@ $userRole = $_SESSION['rol'] ?? '';
                 </div>
             </div>
         </div>
+
+        <!-- Panel: Por Proveedor -->
+        <div class="table-container" id="panelProveedores" style="display: none;">
+            <div class="provider-summary">
+                <div class="provider-summary-item">
+                    <span class="label">Proveedores</span>
+                    <strong><?php echo count($porProveedor); ?></strong>
+                </div>
+                <div class="provider-summary-item">
+                    <span class="label">Total Comprado</span>
+                    <strong>Q<?php echo number_format($provTotalGeneral, 2); ?></strong>
+                </div>
+                <div class="provider-summary-item">
+                    <span class="label">Saldo Pendiente</span>
+                    <strong style="color: <?php echo $provSaldoGeneral > 0 ? 'var(--color-danger)' : 'var(--color-success)'; ?>;">
+                        Q<?php echo number_format($provSaldoGeneral, 2); ?>
+                    </strong>
+                </div>
+                <div class="provider-summary-hint">
+                    <i class="bi bi-hand-index-thumb"></i> Haz clic en un proveedor para ver el detalle de sus compras
+                </div>
+            </div>
+
+            <?php if (!$porProveedor): ?>
+                <div class="no-results" style="display: block;">
+                    <i class="bi bi-building"></i>
+                    <p>No hay proveedores registrados</p>
+                </div>
+            <?php endif; ?>
+
+            <?php foreach ($porProveedor as $prov): ?>
+            <?php
+                $provPagado = $prov['saldo'] <= 0.004;
+                $numCompras = count($prov['items']);
+                $facturasProv = array_unique(array_filter(array_map(fn($i) => $i['numero_factura'] ?? '', $prov['items'])));
+            ?>
+            <div class="provider-card" data-proveedor="<?php echo htmlspecialchars(mb_strtolower($prov['nombre'], 'UTF-8')); ?>" data-saldo="<?php echo $prov['saldo']; ?>">
+                <div class="provider-header" onclick="toggleProvider(this)">
+                    <div class="provider-info">
+                        <i class="bi bi-chevron-right provider-chevron"></i>
+                        <div class="provider-avatar"><?php echo htmlspecialchars(mb_strtoupper(mb_substr($prov['nombre'], 0, 2, 'UTF-8'), 'UTF-8')); ?></div>
+                        <div>
+                            <strong class="provider-name"><?php echo htmlspecialchars($prov['nombre']); ?></strong>
+                            <div class="provider-meta">
+                                <?php echo $numCompras; ?> compra<?php echo $numCompras === 1 ? '' : 's'; ?>
+                                <?php if ($facturasProv): ?> &middot; <?php echo count($facturasProv); ?> factura<?php echo count($facturasProv) === 1 ? '' : 's'; ?><?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="provider-totals">
+                        <div class="provider-total-item">
+                            <span class="provider-total-label">Total</span>
+                            <strong>Q<?php echo number_format($prov['total'], 2); ?></strong>
+                        </div>
+                        <div class="provider-total-item">
+                            <span class="provider-total-label">Saldo</span>
+                            <strong style="color: <?php echo $provPagado ? 'var(--color-success)' : 'var(--color-danger)'; ?>;">
+                                Q<?php echo number_format($prov['saldo'], 2); ?>
+                            </strong>
+                        </div>
+                        <span class="badge <?php echo $provPagado ? 'badge-pagado' : 'badge-pendiente'; ?>">
+                            <?php echo $provPagado ? 'Pagado' : 'Pendiente'; ?>
+                        </span>
+                    </div>
+                </div>
+                <div class="provider-body">
+                    <table class="table table-hover provider-detail-table">
+                        <thead>
+                            <tr>
+                                <th class="ps-4">Fecha</th>
+                                <th>Referencia</th>
+                                <th>Factura</th>
+                                <th>Medicamento</th>
+                                <th>Cant.</th>
+                                <th>Total</th>
+                                <th>Saldo</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($prov['items'] as $item): ?>
+                            <tr>
+                                <td class="ps-4"><?php echo date('d/m/Y', strtotime($item['fecha_compra'])); ?></td>
+                                <td><span class="badge badge-info"><?php echo htmlspecialchars($item['codigo_referencia'] ?? '-'); ?></span></td>
+                                <td><?php echo htmlspecialchars($item['numero_factura'] ?: '-'); ?></td>
+                                <td><?php echo htmlspecialchars($item['nombre_medicamento']); ?></td>
+                                <td><?php echo $item['cantidad']; ?></td>
+                                <td><strong>Q<?php echo number_format($item['total'], 2); ?></strong></td>
+                                <td>
+                                    <strong style="color: <?php echo $item['saldo'] > 0 ? 'var(--color-danger)' : 'var(--color-success)'; ?>;">
+                                        Q<?php echo number_format($item['saldo'], 2); ?>
+                                    </strong>
+                                </td>
+                                <td>
+                                    <span class="badge <?php echo $item['saldo'] <= 0 ? 'badge-pagado' : 'badge-pendiente'; ?>">
+                                        <?php echo $item['saldo'] <= 0 ? 'Pagado' : 'Pendiente'; ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php if ($item['saldo'] > 0): ?>
+                                    <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); openPaymentModal(<?php echo $item['id_compra']; ?>, <?php echo $item['saldo']; ?>)">
+                                        <i class="bi bi-cash-coin"></i> Abonar
+                                    </button>
+                                    <?php else: ?>
+                                    <span class="text-muted" style="font-size: 0.85rem;">-</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot>
+                            <tr class="provider-detail-total">
+                                <td colspan="5" style="text-align: right;">Total proveedor:</td>
+                                <td><strong>Q<?php echo number_format($prov['total'], 2); ?></strong></td>
+                                <td colspan="3">
+                                    <strong style="color: <?php echo $provPagado ? 'var(--color-success)' : 'var(--color-danger)'; ?>;">
+                                        Q<?php echo number_format($prov['saldo'], 2); ?>
+                                    </strong>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            <?php endforeach; ?>
+
+            <div id="noResultsProveedores" class="no-results" style="display: none;">
+                <i class="bi bi-search"></i>
+                <p>No se encontraron proveedores que coincidan con la búsqueda</p>
+            </div>
+        </div>
     </div>
 
     <!-- Add Purchase Modal -->
@@ -862,7 +1205,7 @@ $userRole = $_SESSION['rol'] ?? '';
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
-            <form action="add_payment.php" method="POST">
+            <form action="add_payment.php" method="POST" onsubmit="showLoading('Registrando abono...')">
                 <input type="hidden" name="id_compra" id="payment_id_compra">
                 <div class="modal-body">
                     <div class="totals-section" style="margin-bottom: 1.5rem;">
@@ -918,6 +1261,37 @@ $userRole = $_SESSION['rol'] ?? '';
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // ===== Pestañas: Todas las Compras / Por Proveedor =====
+        function switchPurchasesTab(tab) {
+            const isTodas = tab === 'todas';
+            document.getElementById('tabTodas').classList.toggle('active', isTodas);
+            document.getElementById('tabProveedores').classList.toggle('active', !isTodas);
+            document.getElementById('panelTodas').style.display = isTodas ? '' : 'none';
+            document.getElementById('panelProveedores').style.display = isTodas ? 'none' : '';
+            try { sessionStorage.setItem('purchasesTab', tab); } catch (e) {}
+        }
+
+        // Expandir/colapsar tarjeta de proveedor con animación
+        function toggleProvider(header) {
+            const card = header.closest('.provider-card');
+            const body = card.querySelector('.provider-body');
+            if (card.classList.contains('open')) {
+                body.style.maxHeight = body.scrollHeight + 'px';
+                requestAnimationFrame(() => { body.style.maxHeight = '0px'; });
+                card.classList.remove('open');
+            } else {
+                card.classList.add('open');
+                body.style.maxHeight = body.scrollHeight + 'px';
+                const onEnd = function (e) {
+                    if (e.propertyName === 'max-height' && card.classList.contains('open')) {
+                        body.style.maxHeight = 'none';
+                    }
+                    body.removeEventListener('transitionend', onEnd);
+                };
+                body.addEventListener('transitionend', onEnd);
+            }
+        }
+
         function openAddModal() {
             document.getElementById('addModal').classList.add('show');
             
@@ -964,7 +1338,7 @@ $userRole = $_SESSION['rol'] ?? '';
                 btn.closest('tr').remove();
                 updateTotalCompra();
             } else {
-                alert('Debe haber al menos un medicamento en la compra.');
+                uiToast('Debe haber al menos un medicamento en la compra.', 'warning');
             }
         }
 
@@ -988,29 +1362,35 @@ $userRole = $_SESSION['rol'] ?? '';
 
         async function submitBatchPurchase(e) {
             e.preventDefault();
-            
-            if (!confirm('¿Está seguro de registrar esta compra?')) return;
-            
+
+            const ok = await uiConfirm('¿Está seguro de registrar esta compra?', {
+                title: 'Registrar compra',
+                confirmText: 'Sí, registrar',
+                danger: false
+            });
+            if (!ok) return;
+
             const form = e.target;
             const formData = new FormData(form);
-            
+
             try {
-                const response = await fetch('save_purchase_batch.php', {
-                    method: 'POST',
-                    body: formData
+                const result = await withLoading('Registrando compra...', async () => {
+                    const response = await fetch('save_purchase_batch.php', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    return response.json();
                 });
-                
-                const result = await response.json();
-                
+
                 if (result.success) {
-                    alert(result.message);
-                    location.reload();
+                    uiToast(result.message || 'Compra registrada exitosamente', 'success');
+                    setTimeout(() => location.reload(), 900);
                 } else {
-                    alert('Error: ' + result.message);
+                    uiToast('Error: ' + result.message, 'error', 5000);
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Ocurrió un error al procesar la solicitud.');
+                uiToast('Ocurrió un error al procesar la solicitud.', 'error', 5000);
             }
         }
 
@@ -1035,8 +1415,13 @@ $userRole = $_SESSION['rol'] ?? '';
             window.location.href = 'edit_purchase.php?id=' + id;
         }
 
-        function deletePurchase(id) {
-            if (confirm('¿Está seguro de eliminar esta compra?')) {
+        async function deletePurchase(id) {
+            const ok = await uiConfirm('¿Está seguro de eliminar esta compra?', {
+                title: 'Eliminar compra',
+                confirmText: 'Sí, eliminar'
+            });
+            if (ok) {
+                showLoading('Eliminando compra...');
                 window.location.href = 'delete_purchase.php?id=' + id;
             }
         }
@@ -1058,6 +1443,23 @@ $userRole = $_SESSION['rol'] ?? '';
             const searchTerm = searchInput.value.toLowerCase().trim();
             const hidePaid = hidePaidToggle.checked;
             let visibleCount = 0;
+
+            // Filtrar tarjetas de proveedor
+            const providerCards = document.querySelectorAll('.provider-card');
+            let visProv = 0;
+            providerCards.forEach(card => {
+                const texto = ((card.getAttribute('data-proveedor') || '') + ' ' + card.textContent).toLowerCase();
+                const saldo = parseFloat(card.getAttribute('data-saldo')) || 0;
+                let visible = true;
+                if (searchTerm.length > 0 && !texto.includes(searchTerm)) visible = false;
+                if (hidePaid && saldo <= 0.004) visible = false;
+                card.style.display = visible ? '' : 'none';
+                if (visible) visProv++;
+            });
+            const noResultsProv = document.getElementById('noResultsProveedores');
+            if (noResultsProv) {
+                noResultsProv.style.display = visProv === 0 ? 'block' : 'none';
+            }
             
             const summaryRows = document.querySelectorAll('tr.group-header');
 
@@ -1112,8 +1514,13 @@ $userRole = $_SESSION['rol'] ?? '';
 
         searchInput.addEventListener('input', filterPurchases);
         hidePaidToggle.addEventListener('change', filterPurchases);
-        
-        // Initialize Bootstrap collapse manually if needed, but data-bs attributes should work.
+
+        // Restaurar pestaña activa
+        try {
+            const savedTab = sessionStorage.getItem('purchasesTab');
+            if (savedTab === 'proveedores') switchPurchasesTab('proveedores');
+        } catch (e) {}
+
         // Ensure dropdowns don't trigger collapse
         document.querySelectorAll('.dropdown-toggle').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -1121,5 +1528,6 @@ $userRole = $_SESSION['rol'] ?? '';
             });
         });
     </script>
+    <?php include __DIR__ . '/../includes/ui_feedback.php'; ?>
 </body>
 </html>

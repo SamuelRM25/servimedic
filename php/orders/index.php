@@ -35,9 +35,15 @@ try {
     $stmt->execute();
     $sucursales = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Clientes registrados (autocompletado del nombre en el modal)
+    $stmt = $conn->prepare("SELECT id_cliente, nombre, telefono, direccion FROM clientes ORDER BY nombre");
+    $stmt->execute();
+    $clientesRegistrados = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
     // Obtener pedidos
     $stmt = $conn->prepare("
-        SELECT p.*, u.nombre as usuario_nombre, s.nombre as sucursal_nombre
+        SELECT p.*, u.nombre as usuario_nombre, s.nombre as sucursal_nombre,
+               (SELECT v.numero_venta FROM ventas v WHERE v.id_pedido = p.id_pedido ORDER BY v.id_venta DESC LIMIT 1) as numero_venta
         FROM pedidos p
         LEFT JOIN usuarios u ON p.id_usuario = u.id
         LEFT JOIN sucursales s ON p.id_sucursal = s.id_sucursal
@@ -597,6 +603,45 @@ try {
             background: var(--color-bg);
         }
 
+        .cliente-autocomplete {
+            position: relative;
+        }
+
+        .cliente-search-results {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            z-index: 60;
+            background: var(--color-white);
+            border: 2px solid var(--color-border);
+            border-radius: 12px;
+            max-height: 240px;
+            overflow-y: auto;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, .15);
+            display: none;
+        }
+
+        .cliente-search-results.show { display: block; }
+
+        .cliente-search-results .search-result-item { padding: .65rem .9rem; }
+
+        .search-result-empty {
+            padding: .7rem .9rem;
+            color: var(--color-text-muted);
+            font-size: .85rem;
+        }
+
+        .cliente-selected-note {
+            margin-top: .3rem;
+            font-size: .75rem;
+            font-weight: 600;
+            color: var(--color-success);
+            display: none;
+        }
+
+        .cliente-selected-note.show { display: block; }
+
         .cart-section {
             background: var(--color-bg);
             padding: 1rem;
@@ -955,7 +1000,10 @@ try {
                             <td>
                                 <?php if ($p['es_cotizacion']): ?>
                                     <span title="Venta procesada desde cotización"><?php echo htmlspecialchars($p['cotizacion_numero'] ?: 'COT-'.$p['id_pedido']); ?></span>
-                                    <br><small style="color:#888;">Venta #<?php echo $p['id_pedido']; ?></small>
+                                    <br><small style="color:#888;"><?php echo !empty($p['numero_venta']) ? htmlspecialchars($p['numero_venta']) : 'Venta #'.$p['id_pedido']; ?></small>
+                                <?php elseif (!empty($p['numero_venta'])): ?>
+                                    <strong><?php echo htmlspecialchars($p['numero_venta']); ?></strong>
+                                    <br><small style="color:#888;">Pedido #<?php echo $p['id_pedido']; ?></small>
                                 <?php else: ?>
                                     <?php echo $p['id_pedido']; ?>
                                 <?php endif; ?>
@@ -990,9 +1038,15 @@ try {
                                 </span>
                             </td>
                             <td>
-                                <span class="badge <?php echo $p['estado_pago'] === 'Pagado' ? 'badge-pagado' : 'badge-pendiente-credito'; ?>">
-                                    <?php echo $p['estado_pago']; ?>
-                                </span>
+                                <?php if ($p['estado_pago'] === 'Pagado'): ?>
+                                    <span class="badge badge-pagado"><?php echo $p['estado_pago']; ?></span>
+                                <?php else: ?>
+                                    <button class="badge badge-pendiente-credito estado-pago-btn" style="border:none; cursor:pointer; font-size:inherit;"
+                                            onclick="marcarPagado(<?php echo (int)$p['id_pedido']; ?>, this)"
+                                            title="Clic para marcar como Pagado">
+                                        <i class="bi bi-circle"></i> <?php echo $p['estado_pago']; ?>
+                                    </button>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <?php if (!empty($p['guia_numero'])): ?>
@@ -1107,7 +1161,12 @@ try {
                     <div class="form-row-3">
                         <div class="form-group">
                             <label class="form-label">Nombre/Razón Social *</label>
-                            <input type="text" name="cliente_nombre" id="cliente_nombre" class="form-control" required>
+                            <div class="cliente-autocomplete">
+                                <input type="text" name="cliente_nombre" id="cliente_nombre" class="form-control" required autocomplete="off" placeholder="Buscar cliente registrado o escribir uno nuevo...">
+                                <div id="clienteSearchResults" class="cliente-search-results"></div>
+                            </div>
+                            <input type="hidden" name="id_cliente" id="id_cliente">
+                            <div class="cliente-selected-note" id="clienteVinculoNota"><i class="bi bi-link-45deg"></i> Vinculado a cliente registrado</div>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Teléfono *</label>
@@ -1467,6 +1526,7 @@ try {
     <script>
         const inventario = <?php echo json_encode($inventario); ?>;
         const pedidosData = <?php echo json_encode($pedidos); ?>;
+        const clientesData = <?php echo json_encode($clientesRegistrados); ?>;
         const tabsData = {
             cotizaciones: <?php echo json_encode($cotizaciones); ?>,
             ventas: <?php echo json_encode($ventas); ?>,
@@ -1578,6 +1638,58 @@ try {
                 searchResults.classList.add('show');
             } else {
                 searchResults.classList.remove('show');
+            }
+        });
+
+        // ============ Búsqueda/autocompletado de clientes ============
+        const clienteNombreInput = document.getElementById('cliente_nombre');
+        const clienteSearchResults = document.getElementById('clienteSearchResults');
+        const idClienteHidden = document.getElementById('id_cliente');
+        const clienteVinculoNota = document.getElementById('clienteVinculoNota');
+
+        clienteNombreInput.addEventListener('input', function() {
+            idClienteHidden.value = '';
+            clienteVinculoNota.classList.remove('show');
+
+            const term = this.value.trim().toLowerCase();
+            if (term.length < 1) {
+                clienteSearchResults.classList.remove('show');
+                return;
+            }
+
+            const filtered = clientesData.filter(c =>
+                c.nombre.toLowerCase().includes(term) ||
+                (c.telefono || '').toLowerCase().includes(term)
+            ).slice(0, 10);
+
+            if (filtered.length > 0) {
+                clienteSearchResults.innerHTML = filtered.map(c => `
+                    <div class="search-result-item" onclick="seleccionarCliente(${c.id_cliente})">
+                        <strong>${escapeHtml(c.nombre)}</strong>
+                        ${c.telefono ? '<br><small><i class="bi bi-telephone"></i> ' + escapeHtml(c.telefono) + '</small>' : ''}
+                        ${c.direccion ? '<br><small>' + escapeHtml(c.direccion) + '</small>' : ''}
+                    </div>
+                `).join('');
+            } else {
+                clienteSearchResults.innerHTML = '<div class="search-result-empty">Sin coincidencias: se usará el nombre escrito (sin vincular a un cliente registrado).</div>';
+            }
+            clienteSearchResults.classList.add('show');
+        });
+
+        function seleccionarCliente(idCliente) {
+            const c = clientesData.find(x => x.id_cliente == idCliente);
+            if (!c) return;
+            clienteNombreInput.value = c.nombre;
+            document.getElementById('cliente_telefono').value = c.telefono || '';
+            document.getElementById('cliente_direccion').value = c.direccion || '';
+            idClienteHidden.value = c.id_cliente;
+            clienteVinculoNota.classList.add('show');
+            clienteSearchResults.classList.remove('show');
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.cliente-autocomplete')) {
+                clienteSearchResults.classList.remove('show');
             }
         });
 
@@ -1751,6 +1863,8 @@ try {
             editingId = null;
             document.getElementById('orderForm').reset();
             document.getElementById('id_pedido').value = '';
+            clienteSearchResults.classList.remove('show');
+            clienteVinculoNota.classList.remove('show');
             cart = [];
             updateCartDisplay();
             setTipo('cotizacion');
@@ -1779,6 +1893,8 @@ try {
                     document.getElementById('cliente_nombre').value = p.cliente_nombre || '';
                     document.getElementById('cliente_telefono').value = p.cliente_telefono || '';
                     document.getElementById('cliente_direccion').value = p.cliente_direccion || '';
+                    document.getElementById('id_cliente').value = p.id_cliente || '';
+                    clienteVinculoNota.classList.toggle('show', !!p.id_cliente);
                     document.getElementById('condiciones_pago').value = p.condiciones_pago || '';
                     document.getElementById('id_sucursal').value = p.id_sucursal;
                     document.getElementById('tipo_documento').value = p.tipo_documento;
@@ -1827,7 +1943,7 @@ try {
             e.preventDefault();
 
             if (cart.length === 0) {
-                alert('Debe agregar al menos un producto');
+                uiToast('Debe agregar al menos un producto', 'warning');
                 return;
             }
 
@@ -1835,6 +1951,7 @@ try {
             const data = {
                 id_pedido: formData.get('id_pedido') || null,
                 es_cotizacion: currentTipo === 'cotizacion',
+                id_cliente: formData.get('id_cliente') || null,
                 cliente_nombre: formData.get('cliente_nombre'),
                 cliente_telefono: formData.get('cliente_telefono'),
                 cliente_direccion: formData.get('cliente_direccion'),
@@ -1855,6 +1972,7 @@ try {
 
             const btn = document.getElementById('submitBtn');
             btn.disabled = true;
+            showLoading(data.es_cotizacion ? 'Guardando cotización...' : 'Guardando venta...');
 
             try {
                 const response = await fetch('save_order.php', {
@@ -1892,16 +2010,17 @@ try {
                             true
                         );
                     } else {
-                        alert(result.message);
-                        location.reload();
+                        uiToast(result.message, 'success');
+                        setTimeout(() => location.reload(), 800);
                     }
                 } else {
-                    alert('Error: ' + result.message);
+                    uiToast('Error: ' + result.message, 'error', 5000);
                 }
             } catch (error) {
-                alert('Error al procesar la solicitud');
+                uiToast('Error al procesar la solicitud', 'error', 5000);
                 console.error(error);
             } finally {
+                hideLoading();
                 btn.disabled = false;
             }
         });
@@ -2018,6 +2137,7 @@ try {
 
         async function confirmProcess() {
             const id = document.getElementById('proc_id_pedido').value;
+            showLoading('Procesando cotización...');
             try {
                 const res = await fetch('process_cotizacion.php', {
                     method: 'POST',
@@ -2030,6 +2150,7 @@ try {
                     })
                 });
                 const result = await res.json();
+                hideLoading();
                 if (result.success) {
                     const p = pedidosData.find(x => x.id_pedido == id);
                     closeModal('processModal');
@@ -2042,17 +2163,53 @@ try {
                         true
                     );
                 } else {
-                    alert('Error: ' + result.message);
+                    uiToast('Error: ' + result.message, 'error', 5000);
                 }
             } catch (err) {
+                hideLoading();
                 console.error(err);
-                alert('Error al procesar la cotización');
+                uiToast('Error al procesar la cotización', 'error', 5000);
+            }
+        }
+
+        // ============ Marcar pedido como Pagado ============
+        async function marcarPagado(id, btn) {
+            const ok = await uiConfirm('¿Marcar este pedido como Pagado?', {
+                title: 'Confirmar pago',
+                confirmText: 'Sí, marcar pagado',
+                danger: false
+            });
+            if (!ok) return;
+            const orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split"></i> ...';
+            try {
+                const fd = new FormData();
+                fd.append('id_pedido', id);
+                const res = await fetch('mark_paid.php', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (data.ok) {
+                    uiToast('Pedido marcado como Pagado', 'success');
+                    setTimeout(() => location.reload(), 700);
+                } else {
+                    uiToast('Error: ' + (data.error || 'desconocido'), 'error', 5000);
+                    btn.disabled = false;
+                    btn.innerHTML = orig;
+                }
+            } catch (e) {
+                uiToast('Error de red: ' + e.message, 'error', 5000);
+                btn.disabled = false;
+                btn.innerHTML = orig;
             }
         }
 
         // ============ Cancelar cotización ============
         async function cancelarCotizacion(id) {
-            if (!confirm('¿Está seguro de cancelar esta cotización?')) return;
+            const ok = await uiConfirm('¿Está seguro de cancelar esta cotización?', {
+                title: 'Cancelar cotización',
+                confirmText: 'Sí, cancelar'
+            });
+            if (!ok) return;
             try {
                 const res = await fetch('cancel_order.php', {
                     method: 'POST',
@@ -2061,13 +2218,14 @@ try {
                 });
                 const result = await res.json();
                 if (result.success) {
-                    location.reload();
+                    uiToast('Cotización cancelada', 'success');
+                    setTimeout(() => location.reload(), 700);
                 } else {
-                    alert('Error: ' + result.message);
+                    uiToast('Error: ' + result.message, 'error', 5000);
                 }
             } catch (err) {
                 console.error(err);
-                alert('Error al cancelar la cotización');
+                uiToast('Error al cancelar la cotización', 'error', 5000);
             }
         }
 
@@ -2175,6 +2333,22 @@ try {
             document.getElementById('guiaEditModal').classList.add('show');
         }
 
+        // Al escribir un número de guía, el estado pasa automáticamente a "Creada";
+        // al borrarlo, vuelve a "Pendiente".
+        (function initGuiaAutoEstado() {
+            const numInput = document.getElementById('guiaEditNumero');
+            const estadoSel = document.getElementById('guiaEditEstado');
+            if (!numInput || !estadoSel) return;
+            numInput.addEventListener('input', function () {
+                const tieneNumero = this.value.trim() !== '';
+                if (tieneNumero && estadoSel.value === 'Pendiente') {
+                    estadoSel.value = 'Creada';
+                } else if (!tieneNumero && estadoSel.value === 'Creada') {
+                    estadoSel.value = 'Pendiente';
+                }
+            });
+        })();
+
         function closeGuiaEditModal() {
             document.getElementById('guiaEditModal').classList.remove('show');
         }
@@ -2187,9 +2361,11 @@ try {
             btn.disabled = true;
             btn.textContent = 'Guardando...';
             msg.style.display = 'none';
+            showLoading('Guardando guía...');
             fetch('save_guia.php', { method: 'POST', body: fd })
                 .then(r => r.json())
                 .then(data => {
+                    hideLoading();
                     if (data.ok) {
                         msg.style.background = '#d4edda';
                         msg.style.color = '#155724';
@@ -2206,6 +2382,7 @@ try {
                     }
                 })
                 .catch(err => {
+                    hideLoading();
                     msg.style.background = '#f8d7da';
                     msg.style.color = '#721c24';
                     msg.textContent = 'Error de red: ' + err.message;
@@ -2266,5 +2443,7 @@ try {
 
         updateStats('cotizaciones');
     </script>
+    <?php include __DIR__ . '/../includes/whatsapp_float.php'; ?>
+    <?php include __DIR__ . '/../includes/ui_feedback.php'; ?>
 </body>
 </html>

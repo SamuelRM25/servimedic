@@ -384,6 +384,75 @@ try {
             gap: .5rem;
             border-top: 1px solid var(--color-border);
         }
+        .btn-sm { padding: .4rem .75rem; font-size: .8rem; border-radius: 8px; }
+        /* Modal: pedidos del cliente */
+        .cliente-head {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .75rem 1.5rem;
+            justify-content: space-between;
+            background: linear-gradient(135deg, rgba(255, 61, 0, .06), rgba(31, 168, 255, .08));
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1rem;
+        }
+        .cliente-head .nombre { font-size: 1.1rem; font-weight: 700; }
+        .cliente-head .dato { font-size: .85rem; color: var(--color-text-light); margin-top: .25rem; }
+        .cliente-head .dato i { color: var(--color-blue); margin-right: .3rem; }
+        .resumen-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: .75rem;
+            margin-bottom: 1.25rem;
+        }
+        .resumen-card {
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            padding: .85rem 1rem;
+        }
+        .resumen-card .label {
+            font-size: .68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            color: var(--color-text-muted);
+        }
+        .resumen-card .value { font-size: 1.15rem; font-weight: 700; margin-top: .2rem; }
+        .resumen-card .value.ok { color: var(--color-success); }
+        .resumen-card .value.warn { color: var(--color-warning); }
+        .info-alert {
+            display: flex;
+            gap: .6rem;
+            align-items: flex-start;
+            padding: .85rem 1rem;
+            border-radius: 10px;
+            font-size: .88rem;
+            margin-bottom: 1rem;
+        }
+        .info-alert i { margin-top: .1rem; }
+        .info-alert.warn { background: var(--color-warning-bg); color: #92400E; border: 1px solid #FCD34D; }
+        .info-alert.info { background: #E0F2FE; color: #075985; border: 1px solid #7DD3FC; }
+        .status-badge {
+            display: inline-block;
+            padding: .22rem .6rem;
+            border-radius: 999px;
+            font-size: .72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .st-green { background: var(--color-success-bg); color: #065F46; }
+        .st-amber { background: var(--color-warning-bg); color: #92400E; }
+        .st-red { background: var(--color-danger-bg); color: #991B1B; }
+        .st-blue { background: #DBEAFE; color: #1E40AF; }
+        .st-grey { background: #E5E7EB; color: #374151; }
+        .st-orange { background: #FFE4D6; color: #9A3412; }
+        .tabla-pedidos th, .tabla-pedidos td { padding: .7rem 1rem; font-size: .85rem; }
+        .fila-cancelada { opacity: .55; }
+        .loading-state { text-align: center; padding: 3rem 1rem; color: var(--color-text-muted); }
+        .loading-state i { font-size: 2rem; display: block; margin-bottom: .5rem; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         @media (max-width: 768px) {
             .sidebar { transform: translateX(-100%); transition: transform .25s; }
             .sidebar.show { transform: translateX(0); }
@@ -422,7 +491,6 @@ try {
                 <?php if ($rol_usuario === 'Administrador'): ?>
                 <li class="nav-item"><a href="../sales/index.php" class="nav-link"><i class="bi bi-shop"></i> Ventas</a></li>
                 <li class="nav-item"><a href="../purchases/index.php" class="nav-link"><i class="bi bi-cart-plus"></i> Compras</a></li>
-                <li class="nav-item"><a href="../billing/index.php" class="nav-link"><i class="bi bi-cash-coin"></i> Cobros</a></li>
                 <li class="nav-item"><a href="../reports/index.php" class="nav-link"><i class="bi bi-file-earmark-text"></i> Reportes</a></li>
                 <?php endif; ?>
             </ul>
@@ -482,6 +550,7 @@ try {
                             <th>Teléfono</th>
                             <th>Dirección</th>
                             <th>Registrado</th>
+                            <th style="text-align:right;">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -500,7 +569,12 @@ try {
                             </td>
                             <td><?php echo !empty($c['direccion']) ? htmlspecialchars($c['direccion']) : '<span style="color: var(--color-text-muted);">—</span>'; ?></td>
                             <td style="color: var(--color-text-muted); font-size: .85rem;">
-                                <?php echo date('d/m/Y', strtotime($c['fecha_registro'])); ?>
+                                <?php echo fechaGT($c['fecha_registro']); ?>
+                            </td>
+                            <td style="text-align:right;">
+                                <button class="btn btn-secondary btn-sm" onclick="verPedidosCliente(<?php echo (int) $c['id_cliente']; ?>)">
+                                    <i class="bi bi-clipboard-check"></i> Ver pedidos
+                                </button>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -544,8 +618,126 @@ try {
     </div>
 </div>
 
+<!-- Client orders modal -->
+<div class="modal-overlay" id="pedidosClienteModal">
+    <div class="modal" style="max-width:820px;">
+        <div class="modal-header">
+            <h2 id="pedidosClienteTitle">Pedidos del Cliente</h2>
+            <button class="modal-close" onclick="closeModal('pedidosClienteModal')"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="modal-body" id="pedidosClienteBody" style="max-height:72vh; overflow-y:auto;"></div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, ch => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+    ));
+}
+function fmtFecha(f) {
+    if (!f) return '—';
+    const d = String(f).slice(0, 10).split('-');
+    return d.length === 3 ? d[2] + '/' + d[1] + '/' + d[0] : f;
+}
+function fmtQ(n) { return 'Q' + Number(n || 0).toFixed(2); }
+
+function badgePago(estado) {
+    if (estado === 'Pagado') return '<span class="status-badge st-green"><i class="bi bi-check-circle"></i> Pagado</span>';
+    if (estado === 'Pendiente Crédito') return '<span class="status-badge st-orange"><i class="bi bi-clock-history"></i> Pendiente Crédito</span>';
+    return '<span class="status-badge st-amber"><i class="bi bi-hourglass-split"></i> Pendiente de pago</span>';
+}
+function badgePedido(estado) {
+    const map = {
+        'Pendiente':  'st-grey',
+        'Procesando': 'st-amber',
+        'Enviado':    'st-blue',
+        'Entregado':  'st-green',
+        'Completado': 'st-green',
+        'Cancelado':  'st-red'
+    };
+    return '<span class="status-badge ' + (map[estado] || 'st-grey') + '">' + escHtml(estado) + '</span>';
+}
+
+function verPedidosCliente(idCliente) {
+    const modal = document.getElementById('pedidosClienteModal');
+    const body = document.getElementById('pedidosClienteBody');
+    document.getElementById('pedidosClienteTitle').textContent = 'Pedidos del Cliente';
+    body.innerHTML = '<div class="loading-state"><i class="bi bi-arrow-repeat"></i><p>Cargando pedidos...</p></div>';
+    modal.classList.add('show');
+
+    fetch('get_cliente_pedidos.php?id=' + encodeURIComponent(idCliente))
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Error al cargar los pedidos');
+            renderPedidosCliente(data);
+        })
+        .catch(err => {
+            body.innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-triangle"></i><p>' + escHtml(err.message) + '</p></div>';
+        });
+}
+
+function renderPedidosCliente(data) {
+    const c = data.cliente;
+    const t = data.totales;
+    const body = document.getElementById('pedidosClienteBody');
+
+    document.getElementById('pedidosClienteTitle').textContent = 'Pedidos de ' + c.nombre;
+
+    let html = '';
+    html += '<div class="cliente-head">';
+    html += '<div><div class="nombre">' + escHtml(c.nombre) + '</div>';
+    html += '<div class="dato"><i class="bi bi-telephone-fill"></i>' + (c.telefono ? escHtml(c.telefono) : 'Sin teléfono') + '</div>';
+    html += '<div class="dato"><i class="bi bi-geo-alt-fill"></i>' + (c.direccion ? escHtml(c.direccion) : 'Sin dirección') + '</div></div>';
+    html += '<div style="text-align:right;"><div class="dato">Cliente desde</div>';
+    html += '<div style="font-weight:700;">' + (c.fecha_registro_fmt || fmtFecha(c.fecha_registro)) + '</div></div>';
+    html += '</div>';
+
+    if (t.total_pendiente > 0) {
+        html += '<div class="info-alert warn"><i class="bi bi-exclamation-triangle-fill"></i><div>' +
+            '<strong>Saldo pendiente de pago: ' + fmtQ(t.total_pendiente) + '</strong><br>' +
+            t.pendientes_pago + ' pedido(s) sin pagar. Verificar antes de otorgar crédito o entregar mercadería.</div></div>';
+    }
+    if (t.cotizaciones_abiertas > 0) {
+        html += '<div class="info-alert info"><i class="bi bi-file-earmark-text-fill"></i><div>' +
+            '<strong>' + t.cotizaciones_abiertas + ' cotización(es) sin procesar por ' + fmtQ(t.monto_cotizado) + '</strong><br>' +
+            'Aún no se han convertido en venta.</div></div>';
+    }
+
+    html += '<div class="resumen-grid">';
+    html += '<div class="resumen-card"><div class="label">Pedidos realizados</div><div class="value">' + t.compras + '</div></div>';
+    html += '<div class="resumen-card"><div class="label">Total comprado</div><div class="value">' + fmtQ(t.total_comprado) + '</div></div>';
+    html += '<div class="resumen-card"><div class="label">Pagado</div><div class="value ok">' + fmtQ(t.total_pagado) + '</div></div>';
+    html += '<div class="resumen-card"><div class="label">Pendiente de pago</div><div class="value ' + (t.total_pendiente > 0 ? 'warn' : '') + '">' + fmtQ(t.total_pendiente) + '</div></div>';
+    html += '</div>';
+
+    if (!data.pedidos.length) {
+        html += '<div class="empty-state"><i class="bi bi-clipboard-x"></i><p>Este cliente aún no tiene pedidos ni cotizaciones.</p></div>';
+    } else {
+        html += '<div style="overflow-x:auto;"><table class="tabla-pedidos"><thead><tr>' +
+            '<th>Documento</th><th>Fecha</th><th>Tipo</th><th>Total</th><th>Estado pedido</th><th>Estado pago</th>' +
+            '</tr></thead><tbody>';
+        data.pedidos.forEach(p => {
+            const doc = p.es_cotizacion
+                ? (p.cotizacion_numero || ('COT-' + p.id_pedido))
+                : (p.numero_venta || ('Pedido #' + p.id_pedido));
+            const cancelado = p.estado_pedido === 'Cancelado';
+            html += '<tr' + (cancelado ? ' class="fila-cancelada"' : '') + '>';
+            html += '<td><strong>' + escHtml(doc) + '</strong><br><small style="color:var(--color-text-muted);">Pedido #' + p.id_pedido + '</small></td>';
+            html += '<td>' + (p.fecha_pedido_fmt || fmtFecha(p.fecha_pedido)) + '</td>';
+            html += '<td>' + (p.es_cotizacion ? 'Cotización' : 'Venta') + '<br><small style="color:var(--color-text-muted);">' + escHtml(p.tipo_documento || '') + '</small></td>';
+            html += '<td><strong>' + fmtQ(p.total) + '</strong></td>';
+            html += '<td>' + badgePedido(p.estado_pedido) + '</td>';
+            html += '<td>' + badgePago(p.estado_pago) + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    body.innerHTML = html;
+}
+
 function openClienteModal() {
     document.getElementById('clienteModal').classList.add('show');
     setTimeout(() => document.querySelector('#clienteForm input[name="nombre"]').focus(), 200);

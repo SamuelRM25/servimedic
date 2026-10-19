@@ -65,13 +65,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $idCompra = $conn->lastInsertId();
         
         
-        // CREAR REGISTRO EN INVENTARIO COMO "PENDIENTE" (Opcional - requiere ejecutar update_inventario_integration.sql)
+        // CREAR REGISTRO EN INVENTARIO: siempre Ingresado (el ingreso es automático al comprar)
         try {
-            $estadoInventario = 'Pendiente';
-            
-            if ($estado === 'Ingresado') {
-                $estadoInventario = 'Ingresado';
-            }
+            $estadoInventario = 'Ingresado';
             
             $stmtInventario = $conn->prepare("
                 INSERT INTO inventario (

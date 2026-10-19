@@ -93,52 +93,60 @@ try {
         $idPedido
     ]);
 
-    // Crear venta si es al contado
+    // Crear la venta del pedido (al contado o a crédito).
+    // Las ventas a crédito también generan registro para que aparezcan en
+    // Reportes y tengan su número VEN-...; su forma de pago se registra
+    // cuando se marcan como Pagadas.
     $idVenta = null;
-    if ($tipoPagoEstado === 'Al Contado') {
-        $stmtVenta = $conn->prepare("
-            INSERT INTO ventas (
-                id_usuario, id_sucursal, cliente_nombre, cliente_nit, venta_personal,
-                tipo_documento, es_credito, id_pedido, total, descuento, total_final, estado
-            ) VALUES (?, ?, ?, ?, 0, ?, 0, ?, ?, ?, ?, 'Completada')
-        ");
-        $stmtVenta->execute([
-            $pedido['id_usuario'],
-            $pedido['id_sucursal'],
-            $pedido['cliente_nombre'],
-            'CF',
-            $tipoDocumento,
-            $idPedido,
-            $subtotal,
-            $desc['descuento'],
-            $subtotal
+    $esCredito = ($tipoPagoEstado === 'Crédito');
+    $numeroVenta = generarNumeroVenta($conn);
+    $stmtVenta = $conn->prepare("
+        INSERT INTO ventas (
+            numero_venta, id_usuario, id_sucursal, cliente_nombre, cliente_nit, venta_personal,
+            tipo_documento, es_credito, id_pedido, total, descuento, total_final, estado
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'Completada')
+    ");
+    $stmtVenta->execute([
+        $numeroVenta,
+        $pedido['id_usuario'],
+        $pedido['id_sucursal'],
+        $pedido['cliente_nombre'],
+        'CF',
+        $tipoDocumento,
+        $esCredito ? 1 : 0,
+        $idPedido,
+        $subtotal,
+        $desc['descuento'],
+        $subtotal
+    ]);
+    $idVenta = $conn->lastInsertId();
+
+    $stmtDetalleVenta = $conn->prepare("
+        INSERT INTO detalle_ventas (id_venta, id_inventario, cantidad, precio_unitario, subtotal)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    foreach ($detalles as $det) {
+        if (empty($det['id_inventario'])) continue;
+        $stmtDetalleVenta->execute([
+            $idVenta,
+            (int) $det['id_inventario'],
+            $det['cantidad'],
+            $det['precio_unitario'],
+            $det['subtotal']
         ]);
-        $idVenta = $conn->lastInsertId();
+    }
 
-        $stmtDetalleVenta = $conn->prepare("
-            INSERT INTO detalle_ventas (id_venta, id_inventario, cantidad, precio_unitario, subtotal)
-            VALUES (?, ?, ?, ?, ?)
-        ");
-        foreach ($detalles as $det) {
-            if (empty($det['id_inventario'])) continue;
-            $stmtDetalleVenta->execute([
-                $idVenta,
-                (int) $det['id_inventario'],
-                $det['cantidad'],
-                $det['precio_unitario'],
-                $det['subtotal']
-            ]);
-        }
-
+    // La forma de pago solo se registra si el cobro ya se realizó (contado).
+    if (!$esCredito) {
         $stmtFormaPago = $conn->prepare("
             INSERT INTO formas_pago (id_venta, tipo_pago, monto)
             VALUES (?, ?, ?)
         ");
         $stmtFormaPago->execute([$idVenta, formaPagoDesdeMetodo($metodoPago), $subtotal]);
-
-        $stmt = $conn->prepare("UPDATE pedidos SET id_venta = ? WHERE id_pedido = ?");
-        $stmt->execute([$idVenta, $idPedido]);
     }
+
+    $stmt = $conn->prepare("UPDATE pedidos SET id_venta = ? WHERE id_pedido = ?");
+    $stmt->execute([$idVenta, $idPedido]);
 
     $conn->commit();
 
@@ -147,6 +155,7 @@ try {
         'message' => 'Cotización procesada como venta exitosamente',
         'id_pedido' => $idPedido,
         'id_venta' => $idVenta,
+        'numero_venta' => $numeroVenta,
         'subtotal' => $subtotal,
         'descuento' => $desc['descuento'],
         'desglose' => $desc['desglose'],
