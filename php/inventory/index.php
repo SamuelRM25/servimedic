@@ -783,7 +783,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                 <table id="inventoryTable">
                     <thead>
                         <tr>
-                            <th>Ref. #</th>
+                            <th>ID Med</th>
                             <th>Medicamento</th>
                             <th>Molécula</th>
                             <th>Presentación</th>
@@ -818,7 +818,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                             }
                         ?>
                         <tr data-expired="<?php echo $isExpired ? '1' : '0'; ?>" data-status="<?php echo $med['estado_ingreso'] ?? 'Ingresado'; ?>">
-                            <td><span class="badge badge-info"><?php echo htmlspecialchars($med['codigo_referencia'] ?? 'N/A'); ?></span></td>
+                            <td><span class="badge badge-info"><?php echo htmlspecialchars(!empty($med['codigo_medicamento']) ? $med['codigo_medicamento'] : (!empty($med['codigo_referencia']) ? $med['codigo_referencia'] : 'N/A')); ?></span></td>
                             <td><strong><?php echo htmlspecialchars($med['nom_medicamento']); ?></strong></td>
                             <td><?php echo htmlspecialchars($med['mol_medicamento']); ?></td>
                             <td><?php echo htmlspecialchars($med['presentacion_med']); ?></td>

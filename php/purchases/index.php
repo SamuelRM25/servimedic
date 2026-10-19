@@ -964,6 +964,7 @@ $userRole = $_SESSION['rol'] ?? '';
                                                     <thead class="nested-table-header">
                                                         <tr>
                                                             <th class="ps-4">Medicamento</th>
+                                                            <th>Código</th>
                                                             <th>Presentación</th>
                                                             <th>Cant.</th>
                                                             <th>P. Unit</th>
@@ -976,6 +977,7 @@ $userRole = $_SESSION['rol'] ?? '';
                                                         <?php foreach ($group['items'] as $item): ?>
                                                         <tr>
                                                             <td class="ps-4"><?php echo htmlspecialchars($item['nombre_medicamento']); ?></td>
+                                                            <td><?php echo !empty($item['codigo_medicamento']) ? '<span class="badge badge-info">' . htmlspecialchars($item['codigo_medicamento']) . '</span>' : '<span class="text-muted">-</span>'; ?></td>
                                                             <td><?php echo htmlspecialchars($item['presentacion']); ?></td>
                                                             <td><?php echo $item['cantidad']; ?></td>
                                                             <td>Q<?php echo number_format($item['precio_unitario'], 2); ?></td>
@@ -1078,6 +1080,7 @@ $userRole = $_SESSION['rol'] ?? '';
                                 <th>Referencia</th>
                                 <th>Factura</th>
                                 <th>Medicamento</th>
+                                <th>Código</th>
                                 <th>Cant.</th>
                                 <th>Total</th>
                                 <th>Saldo</th>
@@ -1092,6 +1095,7 @@ $userRole = $_SESSION['rol'] ?? '';
                                 <td><span class="badge badge-info"><?php echo htmlspecialchars($item['codigo_referencia'] ?? '-'); ?></span></td>
                                 <td><?php echo htmlspecialchars($item['numero_factura'] ?: '-'); ?></td>
                                 <td><?php echo htmlspecialchars($item['nombre_medicamento']); ?></td>
+                                <td><?php echo !empty($item['codigo_medicamento']) ? '<strong>' . htmlspecialchars($item['codigo_medicamento']) . '</strong>' : '<span class="text-muted">-</span>'; ?></td>
                                 <td><?php echo $item['cantidad']; ?></td>
                                 <td><strong>Q<?php echo number_format($item['total'], 2); ?></strong></td>
                                 <td>
@@ -1118,7 +1122,7 @@ $userRole = $_SESSION['rol'] ?? '';
                         </tbody>
                         <tfoot>
                             <tr class="provider-detail-total">
-                                <td colspan="5" style="text-align: right;">Total proveedor:</td>
+                                <td colspan="6" style="text-align: right;">Total proveedor:</td>
                                 <td><strong>Q<?php echo number_format($prov['total'], 2); ?></strong></td>
                                 <td colspan="3">
                                     <strong style="color: <?php echo $provPagado ? 'var(--color-success)' : 'var(--color-danger)'; ?>;">
