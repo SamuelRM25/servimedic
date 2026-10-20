@@ -21,17 +21,18 @@ try {
     $stmt = $conn->prepare("
         SELECT p.*, s.nombre as sucursal_nombre, s.direccion_pdf, s.telefono as suc_telefono,
                s.telefono2 as suc_telefono2, s.banco, s.cuenta_tipo, s.cuenta_numero,
-               s.texto_legal_isr, s.texto_legal_iva
+               s.texto_legal_isr, s.texto_legal_iva,
+               (SELECT v.numero_venta FROM ventas v WHERE v.id_pedido = p.id_pedido ORDER BY v.id_venta DESC LIMIT 1) as numero_venta
         FROM pedidos p
         LEFT JOIN sucursales s ON p.id_sucursal = s.id_sucursal
         WHERE p.id_pedido = ?
     ");
     $stmt->execute([$id]);
     $pedido = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$pedido) throw new Exception('Cotización no encontrada');
+    if (!$pedido) throw new Exception('Documento no encontrado');
 
     $stmt = $conn->prepare("
-        SELECT d.*, i.nom_medicamento, i.codigo_referencia, i.codigo_barras
+        SELECT d.*, i.nom_medicamento, i.codigo_medicamento, i.codigo_referencia, i.codigo_barras
         FROM detalle_pedidos d
         LEFT JOIN inventario i ON d.id_inventario = i.id_inventario
         WHERE d.id_pedido = ?

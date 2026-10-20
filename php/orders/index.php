@@ -1063,6 +1063,9 @@ try {
                             </td>
                             <td>
                                 <div class="action-group">
+                                    <button class="act-btn" title="PDF / Imprimir / WhatsApp" onclick="openSalePdfModal(<?php echo (int)$p['id_pedido']; ?>)">
+                                        <i class="bi bi-file-earmark-pdf"></i>
+                                    </button>
                                     <button class="act-btn" title="Imprimir ticket" onclick='printOrderTicket(<?php echo json_encode($p); ?>)'>
                                         <i class="bi bi-printer"></i>
                                     </button>
@@ -1388,6 +1391,46 @@ try {
         </div>
     </div>
 
+    <!-- PDF de Venta Modal -->
+    <div class="modal-overlay" id="salePdfModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h2 class="modal-title">Venta Realizada</h2>
+                <button class="modal-close" onclick="closeSalePdfModal()">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="proc-info">
+                    <strong id="salePdfNumero">VEN-00000000-0000</strong>
+                    <span id="salePdfEstado" class="badge badge-pagado" style="margin-left: 0.4rem;">Pagado</span><br>
+                    Cliente: <span id="salePdfCliente"></span><br>
+                    Total: <span id="salePdfTotal"></span>
+                </div>
+                <div class="send-options">
+                    <button type="button" class="send-option" onclick="descargarVentaPDF()">
+                        <i class="bi bi-file-earmark-pdf"></i>
+                        Descargar PDF
+                    </button>
+                    <button type="button" class="send-option" onclick="imprimirVentaPDF()">
+                        <i class="bi bi-printer"></i>
+                        Imprimir PDF
+                    </button>
+                    <button type="button" class="send-option whatsapp" onclick="enviarVentaWhatsApp()">
+                        <i class="bi bi-whatsapp"></i>
+                        Enviar por WhatsApp
+                    </button>
+                </div>
+                <p style="margin-top: 1rem; font-size: 0.8rem; color: var(--color-text-light); text-align: center;">
+                    Al enviar por WhatsApp se descarga el PDF para que lo adjunte en la conversación.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSalePdfModal()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Guía de Envío Modal (portal del transportista embebido con sesión iniciada) -->
     <div class="modal-overlay" id="guiaModal">
         <div class="modal guia-modal">
@@ -1623,6 +1666,7 @@ try {
             const filtered = inventario.filter(item =>
                 item.nom_medicamento.toLowerCase().includes(term) ||
                 (item.mol_medicamento || '').toLowerCase().includes(term) ||
+                (item.codigo_medicamento || '').toLowerCase().includes(term) ||
                 (item.codigo_referencia || '').toLowerCase().includes(term)
             );
 
@@ -1630,7 +1674,7 @@ try {
                 searchResults.innerHTML = filtered.map(item => `
                     <div class="search-result-item" onclick="addToCart(${item.id_inventario})">
                         <strong>${escapeHtml(item.nom_medicamento)}</strong>
-                        ${item.codigo_referencia ? '<span class="cart-item-code">' + escapeHtml(item.codigo_referencia) + '</span>' : ''}
+                        ${(item.codigo_medicamento || item.codigo_referencia) ? '<span class="cart-item-code">' + escapeHtml(item.codigo_medicamento || item.codigo_referencia) + '</span>' : ''}
                         <br>
                         <small>${escapeHtml(item.mol_medicamento || '')} • Stock: ${item.cantidad_med} • Q${parseFloat(item.precio_venta_sugerido).toFixed(2)}</small>
                     </div>
@@ -1706,7 +1750,7 @@ try {
             } else {
                 cart.push({
                     id_inventario: item.id_inventario,
-                    codigo: item.codigo_referencia || item.codigo_barras || '',
+                    codigo: item.codigo_medicamento || item.codigo_referencia || item.codigo_barras || '',
                     nombre: item.nom_medicamento,
                     precio: parseFloat(item.precio_venta_sugerido),
                     cantidad: 1,
@@ -1903,7 +1947,7 @@ try {
 
                     cart = res.productos.map(d => ({
                         id_inventario: d.id_inventario,
-                        codigo: d.codigo_item || d.codigo_referencia || '',
+                        codigo: d.codigo_medicamento || d.codigo_item || d.codigo_referencia || '',
                         nombre: d.descripcion || d.nom_medicamento || '',
                         precio: parseFloat(d.precio_unitario),
                         cantidad: parseInt(d.cantidad),
@@ -2045,7 +2089,7 @@ try {
             let tel = String(telefono || '').replace(/\D/g, '');
             if (tel.length === 8) tel = '502' + tel;
             if (!tel) {
-                alert('La cotización no tiene teléfono registrado para WhatsApp');
+                uiToast('El documento no tiene teléfono registrado para WhatsApp', 'warning');
                 return;
             }
             window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank');
@@ -2057,7 +2101,7 @@ try {
                 const res = await fetch('edit_order.php?id=' + id);
                 const data = await res.json();
                 if (!data.success) {
-                    alert(data.message || 'Error al cargar la cotización');
+                    uiToast(data.message || 'Error al cargar la cotización', 'error');
                     return;
                 }
                 const doc = await generarCotizacionPDF(data);
@@ -2065,7 +2109,7 @@ try {
                 doc.save('Cotizacion_' + numero + '.pdf');
             } catch (err) {
                 console.error(err);
-                alert('Error al generar el PDF');
+                uiToast('Error al generar el PDF', 'error');
             }
         }
 
@@ -2074,7 +2118,7 @@ try {
                 const res = await fetch('edit_order.php?id=' + id);
                 const data = await res.json();
                 if (!data.success) {
-                    alert(data.message || 'Error al cargar la cotización');
+                    uiToast(data.message || 'Error al cargar la cotización', 'error');
                     return;
                 }
                 const doc = await generarCotizacionPDF(data);
@@ -2090,7 +2134,86 @@ try {
                 abrirWhatsApp(data.pedido.cliente_telefono, msg);
             } catch (err) {
                 console.error(err);
-                alert('Error al generar el PDF');
+                uiToast('Error al generar el PDF', 'error');
+            }
+        }
+
+        // ============ PDF de la venta realizada ============
+        let currentSalePDF = null;
+
+        async function openSalePdfModal(id) {
+            try {
+                const res = await fetch('edit_order.php?id=' + id);
+                const data = await res.json();
+                if (!data.success) {
+                    uiToast(data.message || 'Error al cargar la venta', 'error');
+                    return;
+                }
+                currentSalePDF = data;
+                const p = data.pedido;
+                const numero = p.numero_venta || ('Venta #' + p.id_pedido);
+
+                document.getElementById('salePdfNumero').textContent = numero;
+                document.getElementById('salePdfCliente').textContent = p.cliente_nombre;
+                document.getElementById('salePdfTotal').textContent = fmtQ(p.total);
+
+                const estado = document.getElementById('salePdfEstado');
+                estado.textContent = p.estado_pago || 'Pendiente';
+                estado.className = 'badge ' + (p.estado_pago === 'Pagado' ? 'badge-pagado' : 'badge-pendiente-credito');
+                estado.style.marginLeft = '0.4rem';
+
+                document.getElementById('salePdfModal').classList.add('show');
+            } catch (err) {
+                console.error(err);
+                uiToast('Error al cargar la venta', 'error');
+            }
+        }
+
+        function closeSalePdfModal() {
+            document.getElementById('salePdfModal').classList.remove('show');
+        }
+
+        function nombreArchivoVenta(p) {
+            return 'Venta_' + (p.numero_venta || p.id_pedido) + '.pdf';
+        }
+
+        function mensajeVenta(p) {
+            const numero = p.numero_venta || ('Venta #' + p.id_pedido);
+            return `Hola ${p.cliente_nombre}, le compartimos el comprobante de su compra ${numero} por ${fmtQ(p.total)}. Adjunto el PDF con los detalles.`;
+        }
+
+        async function descargarVentaPDF() {
+            if (!currentSalePDF) return;
+            try {
+                const doc = await generarCotizacionPDF(currentSalePDF, { tipo: 'venta' });
+                doc.save(nombreArchivoVenta(currentSalePDF.pedido));
+            } catch (err) {
+                console.error(err);
+                uiToast('Error al generar el PDF', 'error');
+            }
+        }
+
+        async function imprimirVentaPDF() {
+            if (!currentSalePDF) return;
+            try {
+                const doc = await generarCotizacionPDF(currentSalePDF, { tipo: 'venta' });
+                doc.autoPrint();
+                window.open(doc.output('bloburl'), '_blank');
+            } catch (err) {
+                console.error(err);
+                uiToast('Error al generar el PDF', 'error');
+            }
+        }
+
+        async function enviarVentaWhatsApp() {
+            if (!currentSalePDF) return;
+            try {
+                const doc = await generarCotizacionPDF(currentSalePDF, { tipo: 'venta' });
+                doc.save(nombreArchivoVenta(currentSalePDF.pedido));
+                abrirWhatsApp(currentSalePDF.pedido.cliente_telefono, mensajeVenta(currentSalePDF.pedido));
+            } catch (err) {
+                console.error(err);
+                uiToast('Error al generar el PDF', 'error');
             }
         }
 
