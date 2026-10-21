@@ -1016,7 +1016,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             err.style.display = 'block';
         }
 
-        // Add to cart logic adjustment needed        // Add to cart with real-time reservation
+        // Add to cart with real-time reservation
         document.getElementById('addToCartBtn').addEventListener('click', () => {
             if (!selectedProduct) return;
 
@@ -1052,8 +1052,9 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             if (existingIndex >= 0) {
                 cart[existingIndex].cantidad += quantity;
                 cart[existingIndex].subtotal = cart[existingIndex].cantidad * cart[existingIndex].precio_unitario;
-                    subtotal: quantity * price
-                });
+                if (authorizedBy) cart[existingIndex].authorized_by = authorizedBy;
+            } else {
+                cart.push(item);
             }
 
             // Reserve stock
