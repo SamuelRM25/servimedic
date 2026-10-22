@@ -853,7 +853,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                 
                 // Audio feedback helpers
                 const playSuccess = () => { /* Play beep if available */ };
-                const playError = () => { alert('Producto no encontrado'); };
+                const playError = () => { uiToast('Producto no encontrado', 'error'); };
 
                 try {
                     const res = await fetch(`search_by_barcode.php?code=${encodeURIComponent(code)}`);
@@ -1024,13 +1024,13 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             const price = parseFloat(document.getElementById('priceInput').value);
             
             if (isNaN(quantity) || quantity <= 0) {
-                alert('Ingrese una cantidad válida');
+                uiToast('Ingrese una cantidad válida', 'error');
                 return;
             }
 
             const reserved = reservedStock[selectedProduct.id_inventario] || 0;
             if (quantity + reserved > selectedProduct.cantidad_med) {
-                alert('No hay suficiente stock disponible');
+                uiToast('No hay suficiente stock disponible', 'error');
                 return;
             }
 
@@ -1164,12 +1164,12 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             const customerNit = document.getElementById('customerNit').value.trim();
 
             if (!customerName) {
-                alert('Ingrese el nombre del cliente');
+                uiToast('Ingrese el nombre del cliente', 'error');
                 return;
             }
 
             if (cart.length === 0) {
-                alert('El carrito está vacío');
+                uiToast('El carrito está vacío', 'error');
                 return;
             }
 
@@ -1184,7 +1184,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             });
 
             if (paymentMethods.length === 0) {
-                alert('Agregue al menos una forma de pago');
+                uiToast('Agregue al menos una forma de pago', 'error');
                 return;
             }
 
@@ -1192,7 +1192,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             const totalSale = parseFloat(document.getElementById('totalFinal').textContent);
 
             if (Math.abs(totalPayment - totalSale) > 0.01) {
-                alert(`El total de pagos (Q${totalPayment.toFixed(2)}) no coincide con el total de la venta (Q${totalSale.toFixed(2)})`);
+                uiToast(`El total de pagos (Q${totalPayment.toFixed(2)}) no coincide con el total de la venta (Q${totalSale.toFixed(2)})`, 'error');
                 return;
             }
 
