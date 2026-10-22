@@ -1563,9 +1563,26 @@ try {
         </div>
     </div>
 
+    <?php
+    // El servidor envía los assets con 'cache-control: public, max-age=604800'
+    // (7 días). Sin un parámetro de versión, el navegador sigue ejecutando el
+    // JS viejo aunque se suba uno nuevo, y el PDF sale con el diseño anterior.
+    // Se usa el mtime más reciente de los archivos para invalidar la caché.
+    $pdf_assets_version = 0;
+    foreach (array(
+        __DIR__ . '/../../assets/js/cotizacion_pdf.js',
+        __DIR__ . '/../../assets/img/CLINOVA.png',
+        __DIR__ . '/../../assets/img/logobanrural.png',
+    ) as $pdf_asset_path) {
+        $pdf_assets_version = max($pdf_assets_version, (int) @filemtime($pdf_asset_path));
+    }
+    if ($pdf_assets_version <= 0) {
+        $pdf_assets_version = 1;
+    }
+    ?>
     <script src="../../assets/js/ticket_printer.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="../../assets/js/cotizacion_pdf.js"></script>
+    <script src="../../assets/js/cotizacion_pdf.js?v=<?= $pdf_assets_version ?>"></script>
     <script>
         const inventario = <?php echo json_encode($inventario); ?>;
         const pedidosData = <?php echo json_encode($pedidos); ?>;

@@ -18,6 +18,17 @@ const COTIZACION_PDF_BASE = (function () {
     return s && s.src ? s.src : window.location.href;
 })();
 
+// Versión de los assets. Se toma del parámetro ?v= del propio <script> para que
+// las imágenes (CLINOVA.png, logobanrural.png) también se invaliden: el servidor
+// las envía con max-age de 7 días y el navegador las seguiría sirviendo viejas.
+const COTIZACION_PDF_VERSION = (function () {
+    try {
+        return new URL(COTIZACION_PDF_BASE, window.location.href).searchParams.get('v') || '';
+    } catch (e) {
+        return '';
+    }
+})();
+
 function fmtQ(n) {
     const v = Number(n) || 0;
     return 'Q' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -40,8 +51,9 @@ function fmtFecha(fecha) {
 
 async function loadPdfImage(relPath, maxW, quality) {
     try {
-        const url = new URL(relPath, COTIZACION_PDF_BASE).href;
-        const blob = await fetch(url).then(r => {
+        const url = new URL(relPath, COTIZACION_PDF_BASE);
+        if (COTIZACION_PDF_VERSION) url.searchParams.set('v', COTIZACION_PDF_VERSION);
+        const blob = await fetch(url.href).then(r => {
             if (!r.ok) throw new Error('imagen no encontrada');
             return r.blob();
         });
