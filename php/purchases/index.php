@@ -355,7 +355,13 @@ $userRole = $_SESSION['rol'] ?? '';
         }
         .autocomplete-results.show { display: block; }
         .autocomplete-item { padding: 0.55rem 0.9rem; font-size: 0.85rem; cursor: pointer; }
-        .autocomplete-item:hover { background: rgba(0, 0, 0, 0.05); }
+        .autocomplete-item:hover, .autocomplete-item.active { background: rgba(0, 0, 0, 0.06); }
+        .autocomplete-results.med-results { max-height: 320px; }
+        .autocomplete-item .ac-main { font-weight: 600; }
+        .autocomplete-item .ac-sub { font-size: 0.75rem; opacity: 0.7; margin-top: 2px; }
+        .autocomplete-item .ac-code { float: right; font-size: 0.72rem; font-weight: 600; opacity: 0.6; margin-left: 0.75rem; }
+        .autocomplete-empty { padding: 0.6rem 0.9rem; font-size: 0.8rem; opacity: 0.7; font-style: italic; }
+        .items-table input.codigo-auto { background: rgba(0, 0, 0, 0.04); color: inherit; opacity: 0.85; }
 
         .modal-overlay {
             display: none;
@@ -1206,8 +1212,8 @@ $userRole = $_SESSION['rol'] ?? '';
                         <table class="items-table" id="purchaseItemsTable">
                             <thead>
                                 <tr>
-                                    <th style="width: 8%">Código</th>
-                                    <th style="width: 12%">Medicamento</th>
+                                    <th style="width: 16%">Medicamento</th>
+                                    <th style="width: 6%">Código</th>
                                     <th style="width: 9%">Molécula</th>
                                     <th style="width: 9%">Presentación</th>
                                     <th style="width: 9%">Casa Farm.</th>
@@ -1368,17 +1374,52 @@ $userRole = $_SESSION['rol'] ?? '';
             return autocompleteDropdown;
         }
 
-        function showAutocomplete(input, matches, onSelect) {
+        function showAutocomplete(input, matches, onSelect, opts = {}) {
             const dd = getAutocompleteDropdown();
-            if (!matches.length) { dd.classList.remove('show'); return; }
+            if (!matches.length && !opts.emptyText) { dd.classList.remove('show'); return; }
             autocompleteInput = input;
             autocompleteSelect = onSelect;
-            dd.innerHTML = matches.map(m => '<div class="autocomplete-item" data-value="' + autocompleteEscape(m.value) + '">' + autocompleteEscape(m.label) + '</div>').join('');
+            dd.classList.toggle('med-results', !!opts.rich);
+            dd.innerHTML = matches.length
+                ? matches.map(m => '<div class="autocomplete-item" data-value="' + autocompleteEscape(m.value) + '">'
+                    + (m.code ? '<span class="ac-code">' + autocompleteEscape(m.code) + '</span>' : '')
+                    + (m.sub !== undefined
+                        ? '<div class="ac-main">' + autocompleteEscape(m.label) + '</div><div class="ac-sub">' + autocompleteEscape(m.sub) + '</div>'
+                        : autocompleteEscape(m.label))
+                    + '</div>').join('')
+                : '<div class="autocomplete-empty">' + autocompleteEscape(opts.emptyText) + '</div>';
             const r = input.getBoundingClientRect();
             dd.style.left = r.left + 'px';
             dd.style.top = (r.bottom + 4) + 'px';
-            dd.style.width = Math.max(r.width, 200) + 'px';
+            dd.style.width = Math.max(r.width, opts.minWidth || 200) + 'px';
             dd.classList.add('show');
+        }
+
+        // Navegación con teclado (flechas, Enter, Escape) en la lista desplegable
+        function autocompleteKeydown(e, input) {
+            const dd = autocompleteDropdown;
+            if (!dd || !dd.classList.contains('show') || autocompleteInput !== input) return;
+            const items = Array.from(dd.querySelectorAll('.autocomplete-item'));
+            let idx = items.findIndex(i => i.classList.contains('active'));
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (!items.length) return;
+                idx = e.key === 'ArrowDown' ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
+                items.forEach(i => i.classList.remove('active'));
+                items[idx].classList.add('active');
+                items[idx].scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter') {
+                if (idx >= 0) {
+                    e.preventDefault();
+                    autocompleteSelect(items[idx].dataset.value);
+                    dd.classList.remove('show');
+                } else {
+                    e.preventDefault(); // no enviar el formulario al presionar Enter en la búsqueda
+                    dd.classList.remove('show');
+                }
+            } else if (e.key === 'Escape') {
+                dd.classList.remove('show');
+            }
         }
 
         function attachAutocomplete(input, data) {
@@ -1394,6 +1435,7 @@ $userRole = $_SESSION['rol'] ?? '';
 
             input.addEventListener('input', render);
             input.addEventListener('focus', render);
+            input.addEventListener('keydown', (e) => autocompleteKeydown(e, input));
             input.addEventListener('blur', () => setTimeout(() => {
                 if (autocompleteInput === input) autocompleteDropdown?.classList.remove('show');
             }, 150));
@@ -1422,33 +1464,78 @@ $userRole = $_SESSION['rol'] ?? '';
             return base + String(n).padStart(2, '0');
         }
 
+        // Texto sin acentos y en minúsculas, conservando espacios (para buscar)
+        function textoBusqueda(s) {
+            return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        }
+
+        // Busca en el catálogo por nombre del medicamento (también por molécula,
+        // casa farmacéutica o código). Todas las palabras escritas deben coincidir.
+        function buscarMedicamentos(term) {
+            const palabras = textoBusqueda(term).split(/\s+/).filter(Boolean);
+            const lista = palabras.length
+                ? medicamentosData.filter(m => {
+                    const texto = textoBusqueda([m.nombre, m.molecula, m.presentacion, m.casa_farmaceutica, m.codigo].join(' '));
+                    return palabras.every(p => texto.includes(p));
+                })
+                : medicamentosData.slice();
+            const primera = palabras[0] || '';
+            return lista.sort((a, b) => {
+                // primero los que empiezan con lo escrito, luego orden alfabético
+                const aIni = textoBusqueda(a.nombre).startsWith(primera) ? 0 : 1;
+                const bIni = textoBusqueda(b.nombre).startsWith(primera) ? 0 : 1;
+                return aIni - bIni || (a.nombre || '').localeCompare(b.nombre || '', 'es');
+            });
+        }
+
+        function llenarFilaDesdeCatalogo(row, med) {
+            row.querySelector('input[name$="[nombre_medicamento]"]').value = med.nombre || '';
+            row.querySelector('input[name$="[codigo_medicamento]"]').value = med.codigo || '';
+            row.querySelector('input[name$="[molecula]"]').value = med.molecula || '';
+            row.querySelector('input[name$="[presentacion]"]').value = med.presentacion || '';
+            row.querySelector('input[name$="[casa_farmaceutica]"]').value = med.casa_farmaceutica || '';
+            row.dataset.catalogo = med.codigo || '';
+        }
+
         function attachMedicamentoAutocomplete(input) {
             if (!input || input.dataset.medAttached) return;
             input.dataset.medAttached = '1';
             input.setAttribute('autocomplete', 'off');
+            const row = input.closest('tr');
 
             const render = () => {
-                const term = input.value.trim().toLowerCase();
-                const matches = term ? medicamentosData.filter(m =>
-                    m.codigo.toLowerCase().includes(term) || (m.nombre || '').toLowerCase().includes(term)
-                ).slice(0, 8) : [];
+                const matches = buscarMedicamentos(input.value.trim()).slice(0, 50);
                 showAutocomplete(input, matches.map(m => ({
                     value: m.codigo,
-                    label: m.codigo + ' — ' + m.nombre + (m.casa_farmaceutica ? ' (' + m.casa_farmaceutica + ')' : '')
+                    label: m.nombre,
+                    code: m.codigo,
+                    sub: [m.presentacion, m.molecula, m.casa_farmaceutica].filter(Boolean).join(' · ')
                 })), (val) => {
                     const med = medicamentosData.find(m => m.codigo === val);
                     if (!med) return;
-                    const row = input.closest('tr');
-                    input.value = med.codigo;
-                    row.querySelector('input[name$="[nombre_medicamento]"]').value = med.nombre || '';
-                    row.querySelector('input[name$="[molecula]"]').value = med.molecula || '';
-                    row.querySelector('input[name$="[presentacion]"]').value = med.presentacion || '';
-                    row.querySelector('input[name$="[casa_farmaceutica]"]').value = med.casa_farmaceutica || '';
+                    llenarFilaDesdeCatalogo(row, med);
+                    // pasar directo a los datos de la compra
+                    row.querySelector('input[name$="[lote]"]').focus();
+                }, {
+                    rich: true,
+                    minWidth: 380,
+                    emptyText: input.value.trim()
+                        ? 'No está en el catálogo: se registrará como medicamento nuevo'
+                        : 'Aún no hay medicamentos en el catálogo'
                 });
             };
 
-            input.addEventListener('input', render);
+            input.addEventListener('input', () => {
+                // si se cambia el nombre de un medicamento ya elegido, deja de ser ese medicamento
+                if (row.dataset.catalogo) {
+                    row.dataset.catalogo = '';
+                    row.querySelector('input[name$="[codigo_medicamento]"]').value = '';
+                }
+                render();
+            });
             input.addEventListener('focus', render);
+            input.addEventListener('click', render);
+            input.addEventListener('keydown', (e) => autocompleteKeydown(e, input));
             input.addEventListener('blur', () => setTimeout(() => {
                 if (autocompleteInput === input) autocompleteDropdown?.classList.remove('show');
             }, 150));
@@ -1484,8 +1571,8 @@ $userRole = $_SESSION['rol'] ?? '';
             const row = document.createElement('tr');
             
             row.innerHTML = `
-                <td><input type="text" name="items[${rowCount}][codigo_medicamento]" placeholder="Código" autocomplete="off"></td>
-                <td><input type="text" name="items[${rowCount}][nombre_medicamento]" required placeholder="Nombre"></td>
+                <td><input type="text" name="items[${rowCount}][nombre_medicamento]" required placeholder="Buscar medicamento..."></td>
+                <td><input type="text" name="items[${rowCount}][codigo_medicamento]" class="codigo-auto" placeholder="Auto" readonly tabindex="-1" title="Se asigna automáticamente"></td>
                 <td><input type="text" name="items[${rowCount}][molecula]" required placeholder="Molécula"></td>
                 <td><input type="text" name="items[${rowCount}][presentacion]" required placeholder="Presentación"></td>
                 <td><input type="text" name="items[${rowCount}][casa_farmaceutica]" required placeholder="Casa Farm."></td>
@@ -1509,13 +1596,31 @@ $userRole = $_SESSION['rol'] ?? '';
             const casaInput = row.querySelector('input[name$="[casa_farmaceutica]"]');
 
             attachAutocomplete(casaInput, casasFarmaceuticasData);
-            attachMedicamentoAutocomplete(codigoInput);
+            attachMedicamentoAutocomplete(nombreInput);
 
-            nombreInput.addEventListener('blur', () => {
-                if (!codigoInput.value.trim() && nombreInput.value.trim()) {
+            // Al salir del campo: si el nombre coincide exactamente con uno del catálogo, se toma ese;
+            // si es un medicamento nuevo, se le asigna un código automático.
+            const asignarCodigo = () => {
+                if (row.dataset.catalogo || !nombreInput.value.trim()) return;
+                const exactos = medicamentosData.filter(m =>
+                    textoBusqueda(m.nombre).trim() === textoBusqueda(nombreInput.value).trim() &&
+                    (!casaInput.value.trim() || textoBusqueda(m.casa_farmaceutica) === textoBusqueda(casaInput.value))
+                );
+                if (exactos.length === 1) {
+                    llenarFilaDesdeCatalogo(row, exactos[0]);
+                } else {
+                    codigoInput.value = '';
                     codigoInput.value = generarCodigoMedicamento(nombreInput.value, casaInput.value);
                 }
-            });
+            };
+            nombreInput.addEventListener('blur', () => setTimeout(asignarCodigo, 200));
+            casaInput.addEventListener('blur', () => setTimeout(() => {
+                // código de un medicamento nuevo: regenerar con la casa farmacéutica correcta
+                if (!row.dataset.catalogo && nombreInput.value.trim()) {
+                    codigoInput.value = '';
+                    codigoInput.value = generarCodigoMedicamento(nombreInput.value, casaInput.value);
+                }
+            }, 200));
         }
 
         function removePurchaseRow(btn) {
