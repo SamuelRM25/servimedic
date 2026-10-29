@@ -386,11 +386,25 @@ async function generarCotizacionPDF(data, opts = {}) {
     doc.setTextColor(TEXTO_CLARO[0], TEXTO_CLARO[1], TEXTO_CLARO[2]);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.2);
-    const stLabel = 'SUB-TOTAL:';
-    const stVal = fmtQ(p.subtotal);
-    doc.text(stLabel, MR - 2 - doc.getTextWidth(stVal) - doc.getTextWidth(stLabel) - 3, ry + 4.3, { align: 'left' });
+    // Segmentos de la fila: SUB-TOTAL y, si hay, el descuento especial (a la derecha)
+    const segmentos = [{ label: 'SUB-TOTAL:', val: fmtQ(p.subtotal), color: TEXTO }];
+    const descEsp = parseFloat(p.descuento_especial || 0);
+    if (descEsp > 0) {
+        const pct = p.descuento_especial_tipo === 'porcentaje' && parseFloat(p.descuento_especial_valor) > 0
+            ? ' (' + parseFloat(p.descuento_especial_valor) + '%)' : '';
+        segmentos.push({ label: 'DESCUENTO ESPECIAL' + pct + ':', val: '-' + fmtQ(descEsp), color: [197, 48, 48] });
+    }
+    let segX = MR - 2;
+    for (let i = segmentos.length - 1; i >= 0; i--) {
+        const sg = segmentos[i];
+        doc.setTextColor(sg.color[0], sg.color[1], sg.color[2]);
+        doc.text(sg.val, segX, ry + 4.3, { align: 'right' });
+        segX -= doc.getTextWidth(sg.val) + 3;
+        doc.setTextColor(TEXTO_CLARO[0], TEXTO_CLARO[1], TEXTO_CLARO[2]);
+        doc.text(sg.label, segX, ry + 4.3, { align: 'right' });
+        segX -= doc.getTextWidth(sg.label) + 9;
+    }
     doc.setTextColor(TEXTO[0], TEXTO[1], TEXTO[2]);
-    doc.text(stVal, MR - 2, ry + 4.3, { align: 'right' });
     doc.setDrawColor(LINEA[0], LINEA[1], LINEA[2]);
     doc.setLineWidth(0.12);
     doc.line(ML, ry, MR, ry);

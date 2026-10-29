@@ -13,6 +13,11 @@ try {
     $database = new Database();
     $conn = $database->getConnection();
 
+    $esAdmin = (($_SESSION['rol'] ?? '') === 'Administrador');
+
+    // Columnas del descuento especial (se crean solas si aún no existen)
+    try { asegurarColumnasDescuentoEspecial($conn); } catch (Exception $e) { error_log('Descuento especial: ' . $e->getMessage()); }
+
     // Obtener datos del usuario
     $stmt = $conn->prepare("SELECT * FROM usuarios WHERE id = ?");
     $stmt->execute([$_SESSION['user_id']]);
@@ -770,6 +775,31 @@ try {
             border-top: 2px solid var(--color-border);
         }
 
+        .desc-especial {
+            margin: 0.25rem 0 0.75rem;
+            padding: 0.75rem;
+            background: var(--color-white);
+            border: 1px dashed var(--color-border);
+            border-radius: 10px;
+        }
+        .desc-especial-label {
+            display: flex; align-items: center; gap: 0.4rem;
+            font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem;
+        }
+        .desc-especial-label small { font-weight: 400; color: var(--color-text-light); }
+        .desc-especial-inputs {
+            display: grid;
+            grid-template-columns: 110px 70px 1fr;
+            gap: 0.5rem;
+        }
+        .desc-especial-inputs .form-control { padding: 0.5rem 0.65rem; font-size: 0.9rem; }
+        .total-desc-esp { color: var(--color-danger); }
+        .td-desc-esp { display: block; font-size: 0.72rem; font-weight: 500; color: var(--color-danger); }
+        @media (max-width: 600px) {
+            .desc-especial-inputs { grid-template-columns: 1fr 70px; }
+            .desc-especial-inputs #descEspMotivo { grid-column: 1 / -1; }
+        }
+
         .cot-note {
             margin-top: 0.75rem;
             padding: 0.6rem 0.75rem;
@@ -929,7 +959,7 @@ try {
                             <td><?php echo htmlspecialchars($p['cliente_telefono']); ?></td>
                             <td><?php echo htmlspecialchars($p['condiciones_pago'] ?: '-'); ?></td>
                             <td>Q<?php echo number_format($p['subtotal'], 2); ?></td>
-                            <td><strong>Q<?php echo number_format($p['total'], 2); ?></strong></td>
+                            <td><strong>Q<?php echo number_format($p['total'], 2); ?></strong><?php if ((float)($p['descuento_especial'] ?? 0) > 0): ?><span class="td-desc-esp" title="<?php echo htmlspecialchars($p['descuento_especial_motivo'] ?? 'Descuento especial'); ?>">Desc. -Q<?php echo number_format($p['descuento_especial'], 2); ?></span><?php endif; ?></td>
                             <td>
                                 <span class="badge badge-<?php echo strtolower($p['estado_pedido']); ?>">
                                     <?php echo $p['estado_pedido']; ?>
@@ -959,6 +989,11 @@ try {
                                     <?php else: ?>
                                     <button class="act-btn" title="Imprimir ticket" onclick='printOrderTicket(<?php echo json_encode($p); ?>)'>
                                         <i class="bi bi-printer"></i>
+                                    </button>
+                                    <?php endif; ?>
+                                    <?php if ($esAdmin): ?>
+                                    <button class="act-btn act-danger" title="Eliminar definitivamente" onclick="eliminarDocumento(<?php echo (int)$p['id_pedido']; ?>)">
+                                        <i class="bi bi-trash"></i>
                                     </button>
                                     <?php endif; ?>
                                 </div>
@@ -1031,7 +1066,7 @@ try {
                                 </span>
                             </td>
                             <td>Q<?php echo number_format($p['subtotal'], 2); ?></td>
-                            <td><strong>Q<?php echo number_format($p['total'], 2); ?></strong></td>
+                            <td><strong>Q<?php echo number_format($p['total'], 2); ?></strong><?php if ((float)($p['descuento_especial'] ?? 0) > 0): ?><span class="td-desc-esp" title="<?php echo htmlspecialchars($p['descuento_especial_motivo'] ?? 'Descuento especial'); ?>">Desc. -Q<?php echo number_format($p['descuento_especial'], 2); ?></span><?php endif; ?></td>
                             <td>
                                 <span class="badge badge-<?php echo strtolower($p['estado_pedido']); ?>">
                                     <?php echo $p['estado_pedido']; ?>
@@ -1075,6 +1110,11 @@ try {
                                     <button class="act-btn act-info" title="Registrar/editar guía" onclick="openGuiaEditModal(<?php echo (int)$p['id_pedido']; ?>)">
                                         <i class="bi bi-pencil-square"></i>
                                     </button>
+                                    <?php if ($esAdmin): ?>
+                                    <button class="act-btn act-danger" title="Eliminar definitivamente" onclick="eliminarDocumento(<?php echo (int)$p['id_pedido']; ?>)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                         </tr>
@@ -1115,14 +1155,21 @@ try {
                             <td><?php echo fechaGT($p['fecha_pedido']); ?></td>
                             <td><strong><?php echo htmlspecialchars($p['cliente_nombre']); ?></strong></td>
                             <td>Q<?php echo number_format($p['subtotal'], 2); ?></td>
-                            <td><strong>Q<?php echo number_format($p['total'], 2); ?></strong></td>
+                            <td><strong>Q<?php echo number_format($p['total'], 2); ?></strong><?php if ((float)($p['descuento_especial'] ?? 0) > 0): ?><span class="td-desc-esp" title="<?php echo htmlspecialchars($p['descuento_especial_motivo'] ?? 'Descuento especial'); ?>">Desc. -Q<?php echo number_format($p['descuento_especial'], 2); ?></span><?php endif; ?></td>
                             <td><span class="badge badge-cancelado">Cancelado</span></td>
                             <td>
-                                <?php if ($p['es_cotizacion']): ?>
+                                <?php if ($p['es_cotizacion'] || $esAdmin): ?>
                                 <div class="action-group">
+                                    <?php if ($p['es_cotizacion']): ?>
                                     <button class="act-btn" title="Descargar PDF" onclick="descargarCotizacionPDF(<?php echo $p['id_pedido']; ?>)">
                                         <i class="bi bi-file-earmark-pdf"></i>
                                     </button>
+                                    <?php endif; ?>
+                                    <?php if ($esAdmin): ?>
+                                    <button class="act-btn act-danger" title="Eliminar definitivamente" onclick="eliminarDocumento(<?php echo (int)$p['id_pedido']; ?>)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                    <?php endif; ?>
                                 </div>
                                 <?php else: ?>
                                 <span style="color: var(--color-text-light);">-</span>
@@ -1267,6 +1314,23 @@ try {
                             <span>Subtotal:</span>
                             <strong>Q<span id="subtotal">0.00</span></strong>
                         </div>
+                        <div class="desc-especial">
+                            <div class="desc-especial-label">
+                                <i class="bi bi-tag"></i> Descuento especial <small>(precio especial para el cliente — se rebaja del total)</small>
+                            </div>
+                            <div class="desc-especial-inputs">
+                                <input type="number" id="descEspValor" class="form-control" min="0" step="0.01" placeholder="0" oninput="calculateTotals()">
+                                <select id="descEspTipo" class="form-control" onchange="calculateTotals()">
+                                    <option value="porcentaje">%</option>
+                                    <option value="monto">Q</option>
+                                </select>
+                                <input type="text" id="descEspMotivo" class="form-control" maxlength="150" placeholder="Motivo (opcional), ej. Cliente mayorista">
+                            </div>
+                        </div>
+                        <div class="total-row" id="descEspRow" style="display: none;">
+                            <span>Descuento especial <small id="descEspDetalle" style="color: var(--color-text-light);"></small>:</span>
+                            <strong class="total-desc-esp">-Q<span id="descEspMonto">0.00</span></strong>
+                        </div>
                         <div class="total-row" id="descRow" style="display: none;">
                             <span>Descuento <span id="descMetodo">-</span> (solo Reportes): <small id="descDetalle" style="color: var(--color-text-light);"></small></span>
                             <strong style="color: var(--color-success);">Q<span id="descValor">0.00</span></strong>
@@ -1277,7 +1341,7 @@ try {
                         </div>
                         <div class="cot-note" id="cotNote">
                             <i class="bi bi-info-circle"></i>
-                            El cliente siempre paga el TOTAL. El descuento por método de pago (Tarjeta 6.2% / COD) se calcula y muestra únicamente en Reportes.
+                            El cliente paga el TOTAL (ya con el descuento especial, si lo hay). El descuento por método de pago (Tarjeta 6.2% / COD) se calcula y muestra únicamente en Reportes.
                         </div>
                     </div>
 
@@ -1335,6 +1399,10 @@ try {
                         <div class="total-row">
                             <span>Subtotal:</span>
                             <strong>Q<span id="proc_subtotal">0.00</span></strong>
+                        </div>
+                        <div class="total-row" id="procDescEspRow" style="display: none;">
+                            <span>Descuento especial <small id="procDescEspDetalle" style="color: var(--color-text-light);"></small>:</span>
+                            <strong class="total-desc-esp">-Q<span id="proc_desc_esp">0.00</span></strong>
                         </div>
                         <div class="total-row">
                             <span>Descuento (solo Reportes): <small id="proc_desglose" style="color: var(--color-text-light);"></small></span>
@@ -1866,23 +1934,53 @@ try {
             calculateTotals();
         }
 
+        // Descuento especial (espejo de calcularDescuentoEspecial en PHP): SÍ se rebaja del total
+        function calcularDescuentoEspecial(subtotal, tipo, valor) {
+            tipo = tipo === 'monto' ? 'monto' : 'porcentaje';
+            valor = Math.max(0, Math.round((parseFloat(valor) || 0) * 100) / 100);
+            let monto;
+            if (tipo === 'porcentaje') {
+                valor = Math.min(valor, 100);
+                monto = Math.round(subtotal * valor) / 100;
+            } else {
+                monto = valor;
+            }
+            monto = Math.min(Math.max(0, monto), Math.round(subtotal * 100) / 100);
+            return { monto: monto, tipo: tipo, valor: valor };
+        }
+
+        function textoDescEsp(tipo, valor) {
+            return tipo === 'porcentaje' ? '(' + parseFloat(valor) + '%)' : '';
+        }
+
         function calculateTotals() {
             const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
             const roundedSubtotal = Math.round(subtotal * 100) / 100;
+
+            // Descuento especial
+            const esp = calcularDescuentoEspecial(
+                roundedSubtotal,
+                document.getElementById('descEspTipo').value,
+                document.getElementById('descEspValor').value
+            );
+            const neto = Math.round((roundedSubtotal - esp.monto) * 100) / 100;
+            document.getElementById('descEspMonto').textContent = esp.monto.toFixed(2);
+            document.getElementById('descEspDetalle').textContent = textoDescEsp(esp.tipo, esp.valor);
+            document.getElementById('descEspRow').style.display = esp.monto > 0 ? 'flex' : 'none';
 
             let descuento = 0;
             let desglose = '';
 
             if (currentTipo === 'venta') {
-                const res = calcularDescuento(roundedSubtotal, metodoPagoSelect.value);
+                const res = calcularDescuento(neto, metodoPagoSelect.value);
                 descuento = res.descuento;
                 desglose = res.desglose;
             }
 
-            // El cliente siempre paga el total completo (sin descuento).
+            // El cliente paga el total con el descuento especial.
             // El descuento por método de pago es informativo (solo Reportes).
             document.getElementById('subtotal').textContent = roundedSubtotal.toFixed(2);
-            document.getElementById('total').textContent = roundedSubtotal.toFixed(2);
+            document.getElementById('total').textContent = neto.toFixed(2);
             document.getElementById('descValor').textContent = descuento.toFixed(2);
             document.getElementById('descMetodo').textContent = currentTipo === 'venta' ? metodoPagoSelect.value : '-';
             document.getElementById('descDetalle').textContent = desglose;
@@ -1927,6 +2025,9 @@ try {
             clienteSearchResults.classList.remove('show');
             clienteVinculoNota.classList.remove('show');
             cart = [];
+            document.getElementById('descEspValor').value = '';
+            document.getElementById('descEspTipo').value = 'porcentaje';
+            document.getElementById('descEspMotivo').value = '';
             updateCartDisplay();
             setTipo('cotizacion');
 
@@ -1961,6 +2062,10 @@ try {
                     document.getElementById('tipo_documento').value = p.tipo_documento;
                     document.getElementById('tipo_pago_estado').value = p.tipo_pago_estado;
                     document.getElementById('metodoPago').value = p.metodo_pago || 'Efectivo';
+                    const espValor = parseFloat(p.descuento_especial_valor || 0);
+                    document.getElementById('descEspValor').value = espValor > 0 ? espValor : '';
+                    document.getElementById('descEspTipo').value = p.descuento_especial_tipo === 'monto' ? 'monto' : 'porcentaje';
+                    document.getElementById('descEspMotivo').value = p.descuento_especial_motivo || '';
 
                     cart = res.productos.map(d => ({
                         id_inventario: d.id_inventario,
@@ -2021,6 +2126,9 @@ try {
                 tipo_documento: formData.get('tipo_documento'),
                 tipo_pago_estado: formData.get('tipo_pago_estado'),
                 metodo_pago: currentTipo === 'venta' ? formData.get('metodo_pago') : 'Efectivo',
+                descuento_especial_tipo: document.getElementById('descEspTipo').value,
+                descuento_especial_valor: parseFloat(document.getElementById('descEspValor').value) || 0,
+                descuento_especial_motivo: document.getElementById('descEspMotivo').value.trim(),
                 productos: cart.map(c => ({
                     id_inventario: c.id_inventario,
                     codigo: c.codigo,
@@ -2267,11 +2375,16 @@ try {
             if (!p) return;
             const subtotal = parseFloat(p.subtotal);
             const metodo = document.getElementById('proc_metodo_pago').value;
-            const res = calcularDescuento(subtotal, metodo);
-            // Total a cobrar = subtotal completo; el descuento es solo para Reportes.
+            const esp = calcularDescuentoEspecial(subtotal, p.descuento_especial_tipo, p.descuento_especial_valor);
+            const neto = Math.round((subtotal - esp.monto) * 100) / 100;
+            const res = calcularDescuento(neto, metodo);
+            // Total a cobrar = subtotal menos descuento especial; el descuento por método es solo para Reportes.
             document.getElementById('proc_subtotal').textContent = subtotal.toFixed(2);
+            document.getElementById('proc_desc_esp').textContent = esp.monto.toFixed(2);
+            document.getElementById('procDescEspDetalle').textContent = textoDescEsp(esp.tipo, esp.valor);
+            document.getElementById('procDescEspRow').style.display = esp.monto > 0 ? 'flex' : 'none';
             document.getElementById('proc_descuento').textContent = res.descuento.toFixed(2);
-            document.getElementById('proc_total').textContent = subtotal.toFixed(2);
+            document.getElementById('proc_total').textContent = neto.toFixed(2);
             document.getElementById('proc_desglose').textContent = res.desglose;
         }
 
@@ -2366,6 +2479,51 @@ try {
             } catch (err) {
                 console.error(err);
                 uiToast('Error al cancelar la cotización', 'error', 5000);
+            }
+        }
+
+        // ============ Eliminar documento (solo Administrador) ============
+        async function eliminarDocumento(id) {
+            const p = pedidosData.find(x => x.id_pedido == id);
+            if (!p) return;
+            const esCot = p.es_cotizacion == 1;
+            const nombre = esCot ? (p.cotizacion_numero || ('COT-' + p.id_pedido))
+                                 : (p.numero_venta || ('Pedido #' + p.id_pedido));
+            const devuelveStock = p.estado_pedido !== 'Cancelado' && (!esCot || p.estado_pedido === 'Completado');
+            let msg = `¿Eliminar definitivamente ${nombre} de ${p.cliente_nombre} (Q${parseFloat(p.total).toFixed(2)})?`;
+            if (devuelveStock) {
+                msg += ' Los productos vuelven al inventario y la venta deja de contar en Reportes.';
+            }
+            msg += ' Esta acción no se puede deshacer.';
+
+            const ok = await uiConfirm(msg, {
+                title: esCot && !devuelveStock ? 'Eliminar cotización' : 'Eliminar venta',
+                confirmText: 'Sí, eliminar'
+            });
+            if (!ok) return;
+
+            showLoading('Eliminando...');
+            try {
+                const res = await fetch('delete_order.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ id_pedido: parseInt(id) })
+                });
+                const result = await res.json();
+                hideLoading();
+                if (result.success) {
+                    uiToast(nombre + ' eliminado' +
+                        (result.unidades_devueltas > 0 ? ` · ${result.unidades_devueltas} unidad(es) devueltas al inventario` : ''),
+                        'success');
+                    try { sessionStorage.setItem('pendingTab', currentTab); } catch (e) {}
+                    setTimeout(() => location.reload(), 900);
+                } else {
+                    uiToast('Error: ' + result.message, 'error', 5000);
+                }
+            } catch (err) {
+                hideLoading();
+                console.error(err);
+                uiToast('Error al eliminar el documento', 'error', 5000);
             }
         }
 

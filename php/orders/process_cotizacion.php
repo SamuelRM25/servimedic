@@ -22,6 +22,7 @@ try {
 
     $database = new Database();
     $conn = $database->getConnection();
+    asegurarColumnasDescuentoEspecial($conn);
 
     $stmt = $conn->prepare("SELECT * FROM pedidos WHERE id_pedido = ?");
     $stmt->execute([$idPedido]);
@@ -43,9 +44,16 @@ try {
     }
     $subtotal = round($subtotal, 2);
 
+    // Descuento especial guardado en la cotización (se recalcula sobre el subtotal actual)
+    $esp = calcularDescuentoEspecial(
+        $subtotal,
+        (string) ($pedido['descuento_especial_tipo'] ?? 'porcentaje'),
+        $pedido['descuento_especial_valor'] ?? 0
+    );
+    $neto = round($subtotal - $esp['monto'], 2);   // lo que paga el cliente
+
     // Descuento por método de pago: solo informativo para Reportes.
-    // El cliente siempre paga el total completo.
-    $desc = calcularDescuento($subtotal, $metodoPago);
+    $desc = calcularDescuento($neto, $metodoPago);
 
     $conn->beginTransaction();
 
@@ -77,6 +85,7 @@ try {
             subtotal_original = ?,
             descuento = ?,
             total = ?,
+            descuento_especial = ?,
             estado_pedido = 'Completado',
             estado_pago = ?
         WHERE id_pedido = ?
@@ -88,7 +97,8 @@ try {
         $subtotal,
         $subtotal,
         $desc['descuento'],
-        $subtotal,
+        $neto,
+        $esp['monto'],
         $estadoPago,
         $idPedido
     ]);
@@ -115,9 +125,9 @@ try {
         $tipoDocumento,
         $esCredito ? 1 : 0,
         $idPedido,
-        $subtotal,
+        $neto,
         $desc['descuento'],
-        $subtotal
+        $neto
     ]);
     $idVenta = $conn->lastInsertId();
 
@@ -142,7 +152,7 @@ try {
             INSERT INTO formas_pago (id_venta, tipo_pago, monto)
             VALUES (?, ?, ?)
         ");
-        $stmtFormaPago->execute([$idVenta, formaPagoDesdeMetodo($metodoPago), $subtotal]);
+        $stmtFormaPago->execute([$idVenta, formaPagoDesdeMetodo($metodoPago), $neto]);
     }
 
     $stmt = $conn->prepare("UPDATE pedidos SET id_venta = ? WHERE id_pedido = ?");
@@ -159,7 +169,8 @@ try {
         'subtotal' => $subtotal,
         'descuento' => $desc['descuento'],
         'desglose' => $desc['desglose'],
-        'total' => $subtotal
+        'descuento_especial' => $esp['monto'],
+        'total' => $neto
     ]);
 
 } catch (Exception $e) {

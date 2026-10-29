@@ -258,3 +258,62 @@ function tienePermisoReportes(PDO $conn, int $idUsuario): bool {
     $stmt->execute([$idUsuario]);
     return (bool)$stmt->fetchColumn();
 }
+
+/**
+ * Agrega a una tabla las columnas que falten (migración automática, como en el
+ * resto del sistema). $columnas = ['nombre_columna' => 'definición SQL'].
+ */
+function asegurarColumnas(PDO $conn, string $tabla, array $columnas): void {
+    static $revisadas = [];
+    if (isset($revisadas[$tabla])) return;
+    $stmt = $conn->prepare("
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+    ");
+    $stmt->execute([$tabla]);
+    $existentes = array_map('strtolower', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    foreach ($columnas as $nombre => $definicion) {
+        if (!in_array(strtolower($nombre), $existentes, true)) {
+            $conn->exec("ALTER TABLE `$tabla` ADD COLUMN `$nombre` $definicion");
+        }
+    }
+    $revisadas[$tabla] = true;
+}
+
+/** Columnas del descuento especial (precios especiales para clientes) en pedidos. */
+function asegurarColumnasDescuentoEspecial(PDO $conn): void {
+    asegurarColumnas($conn, 'pedidos', [
+        'descuento_especial'        => "DECIMAL(10,2) NOT NULL DEFAULT '0.00' COMMENT 'Monto del descuento especial (sí se rebaja del total)'",
+        'descuento_especial_tipo'   => "ENUM('porcentaje','monto') NOT NULL DEFAULT 'porcentaje'",
+        'descuento_especial_valor'  => "DECIMAL(10,2) NOT NULL DEFAULT '0.00' COMMENT 'Porcentaje o monto ingresado'",
+        'descuento_especial_motivo' => "VARCHAR(150) NULL DEFAULT NULL",
+    ]);
+}
+
+/** Columnas del visitador médico de cada proveedor. */
+function asegurarColumnasVisitador(PDO $conn): void {
+    asegurarColumnas($conn, 'proveedores', [
+        'visitador_nombre'      => "VARCHAR(150) NULL DEFAULT NULL",
+        'visitador_telefono'    => "VARCHAR(20) NULL DEFAULT NULL",
+        'visitador_actualizado' => "DATETIME NULL DEFAULT NULL",
+    ]);
+}
+
+/**
+ * Calcula el descuento especial (precio especial para un cliente).
+ * A diferencia del descuento por método de pago, este SÍ se rebaja del total.
+ *
+ * @return array{monto:float,tipo:string,valor:float}
+ */
+function calcularDescuentoEspecial(float $subtotal, string $tipo, $valor): array {
+    $tipo  = ($tipo === 'monto') ? 'monto' : 'porcentaje';
+    $valor = max(0.0, round((float) $valor, 2));
+    if ($tipo === 'porcentaje') {
+        $valor = min($valor, 100.0);
+        $monto = round($subtotal * $valor / 100, 2);
+    } else {
+        $monto = $valor;
+    }
+    $monto = min(max(0.0, $monto), round($subtotal, 2));
+    return ['monto' => $monto, 'tipo' => $tipo, 'valor' => $valor];
+}

@@ -41,9 +41,22 @@ try {
     $subtotal = round($subtotal, 2);
 
     $metodoPago = $data['metodo_pago'] ?? 'Efectivo';
-    // Descuento por método de pago: solo informativo para Reportes.
-    // Al cliente siempre se le cobra el total completo.
-    $desc = calcularDescuento($subtotal, $metodoPago);
+
+    // Descuento especial (precio especial para el cliente): SÍ se rebaja del total.
+    // (la migración va antes de la transacción: un ALTER TABLE la cerraría)
+    asegurarColumnasDescuentoEspecial($conn);
+    $esp = calcularDescuentoEspecial(
+        $subtotal,
+        (string) ($data['descuento_especial_tipo'] ?? 'porcentaje'),
+        $data['descuento_especial_valor'] ?? 0
+    );
+    $espMotivo = trim((string) ($data['descuento_especial_motivo'] ?? ''));
+    $espMotivo = $esp['monto'] > 0 && $espMotivo !== '' ? mb_substr($espMotivo, 0, 150) : null;
+    $neto = round($subtotal - $esp['monto'], 2);   // lo que paga el cliente
+
+    // Descuento por método de pago: solo informativo para Reportes
+    // (se calcula sobre lo que paga el cliente).
+    $desc = calcularDescuento($neto, $metodoPago);
 
     $conn->beginTransaction();
 
@@ -64,11 +77,13 @@ try {
         // Las cotizaciones se guardan sin descuento (el descuento por método
         // de pago se calcula únicamente al ver los Reportes)
         $descuento = 0.0;
-        $total = $subtotal;
+        $total = $neto;
         $cargoCod = 0.0;
 
         $stmt = $conn->prepare("
             UPDATE pedidos SET
+                descuento_especial = ?, descuento_especial_tipo = ?,
+                descuento_especial_valor = ?, descuento_especial_motivo = ?,
                 cliente_nombre = ?, cliente_telefono = ?, cliente_direccion = ?,
                 id_cliente = ?,
                 condiciones_pago = ?, tipo_documento = ?, tipo_pago_estado = ?,
@@ -77,6 +92,7 @@ try {
             WHERE id_pedido = ?
         ");
         $stmt->execute([
+            $esp['monto'], $esp['tipo'], $esp['valor'], $espMotivo,
             $data['cliente_nombre'],
             $data['cliente_telefono'] ?? null,
             $data['cliente_direccion'] ?? null,
@@ -126,8 +142,8 @@ try {
         $cotizacionNumero = generarNumeroCotizacion($conn);
         $estadoPedido = 'Pendiente';
         $estadoPago = 'Pendiente';
-        $descuento = 0.0;        // el descuento se aplica al procesar la venta
-        $total = $subtotal;
+        $descuento = 0.0;        // el descuento por método se calcula al procesar la venta
+        $total = $neto;
         $cargoCod = 0.0;
     } else {
         $cotizacionNumero = null;
@@ -136,7 +152,7 @@ try {
         // El cliente siempre paga el total completo; el descuento por método
         // de pago se guarda solo para mostrarlo en Reportes.
         $descuento = $desc['descuento'];
-        $total = $subtotal;
+        $total = $neto;
         $cargoCod = 0.0;
     }
 
@@ -146,8 +162,9 @@ try {
             id_cliente, cliente_nombre, cliente_telefono, cliente_direccion, condiciones_pago,
             tipo_documento, tipo_pago_estado, metodo_pago,
             subtotal, cargo_cod, subtotal_original, descuento, total,
-            estado_pedido, estado_pago
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            estado_pedido, estado_pago,
+            descuento_especial, descuento_especial_tipo, descuento_especial_valor, descuento_especial_motivo
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $_SESSION['user_id'],
@@ -168,7 +185,8 @@ try {
         $descuento,
         $total,
         $estadoPedido,
-        $estadoPago
+        $estadoPago,
+        $esp['monto'], $esp['tipo'], $esp['valor'], $espMotivo
     ]);
 
     $idPedido = $conn->lastInsertId();
@@ -231,7 +249,7 @@ try {
             $data['tipo_documento'],
             $esCredito ? 1 : 0,
             $idPedido,
-            $subtotal,
+            $total,
             $descuento,
             $total
         ]);
@@ -277,6 +295,7 @@ try {
         'numero_venta' => $numeroVenta ?? null,
         'subtotal' => $subtotal,
         'descuento' => $descuento,
+        'descuento_especial' => $esp['monto'],
         'total' => $total
     ]);
 

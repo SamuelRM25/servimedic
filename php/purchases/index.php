@@ -49,6 +49,17 @@ try {
         $medicamentosLista = [];
     }
 
+    // Catálogo de proveedores con su visitador (nombre y teléfono)
+    $proveedoresCatalogo = [];
+    try {
+        asegurarColumnasVisitador($conn);
+        foreach ($conn->query("SELECT nombre, visitador_nombre, visitador_telefono, visitador_actualizado FROM proveedores")->fetchAll(PDO::FETCH_ASSOC) as $pc) {
+            $proveedoresCatalogo[mb_strtolower(trim($pc['nombre']), 'UTF-8')] = $pc;
+        }
+    } catch (Exception $e) {
+        error_log('Visitadores: ' . $e->getMessage());
+    }
+
     // Agrupar compras por proveedor (respaldo: casa farmacéutica)
     $porProveedor = [];
     foreach ($compras as $compra) {
@@ -73,6 +84,17 @@ try {
         $porProveedor[$key]['items'][] = $compra;
     }
     uasort($porProveedor, fn($a, $b) => $b['total'] <=> $a['total']);
+
+    // Proveedores del catálogo que aún no tienen compras (para poder registrar su visitador)
+    foreach ($proveedoresCatalogo as $key => $pc) {
+        if (!isset($porProveedor[$key]) && trim($pc['nombre']) !== '') {
+            $porProveedor[$key] = ['nombre' => trim($pc['nombre']), 'total' => 0.0, 'abonado' => 0.0, 'saldo' => 0.0, 'items' => []];
+        }
+    }
+    foreach ($porProveedor as $key => &$provRef) {
+        $provRef['visitador'] = $proveedoresCatalogo[$key] ?? null;
+    }
+    unset($provRef);
 
     $provTotalGeneral = array_sum(array_column($porProveedor, 'total'));
     $provSaldoGeneral = array_sum(array_column($porProveedor, 'saldo'));
@@ -796,6 +818,43 @@ $userRole = $_SESSION['rol'] ?? '';
         .provider-detail-total td { background: #F8FAFC; font-size: 0.9rem; }
 
         .provider-card.hidden-by-filter { display: none; }
+
+        /* Visitador del proveedor */
+        .provider-visitador {
+            display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem;
+            margin-top: 0.35rem; font-size: 0.8rem; color: var(--color-text);
+        }
+        .provider-visitador .vis-label { color: var(--color-text-light); }
+        .provider-visitador .vis-empty { color: var(--color-text-light); font-style: italic; }
+        .vis-phone-btn {
+            display: inline-flex; align-items: center; gap: 0.3rem;
+            padding: 0.15rem 0.55rem; border-radius: 999px;
+            border: 1px solid #C6F6D5; background: #F0FFF4; color: #22543D;
+            font: inherit; font-weight: 600; cursor: pointer;
+        }
+        .vis-phone-btn:hover { background: #C6F6D5; }
+        .vis-edit-btn {
+            display: inline-flex; align-items: center; gap: 0.25rem;
+            padding: 0.15rem 0.5rem; border-radius: 999px;
+            border: 1px solid var(--color-border); background: var(--color-white);
+            color: var(--color-text-light); font: inherit; font-size: 0.75rem; cursor: pointer;
+        }
+        .vis-edit-btn:hover { color: var(--color-blue); border-color: var(--color-blue); }
+        .vis-menu {
+            position: fixed; z-index: 4500; display: none; min-width: 210px;
+            background: var(--color-white); border: 1px solid var(--color-border);
+            border-radius: 12px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15); padding: 0.35rem;
+        }
+        .vis-menu.show { display: block; }
+        .vis-menu-title { padding: 0.45rem 0.7rem 0.3rem; font-size: 0.75rem; color: var(--color-text-light); }
+        .vis-menu a {
+            display: flex; align-items: center; gap: 0.6rem;
+            padding: 0.6rem 0.7rem; border-radius: 8px;
+            color: var(--color-text); text-decoration: none; font-size: 0.9rem;
+        }
+        .vis-menu a:hover { background: var(--color-bg); }
+        .vis-menu a .bi-whatsapp { color: #25D366; font-size: 1.1rem; }
+        .vis-menu a .bi-telephone-fill { color: var(--color-blue); font-size: 1rem; }
     </style>
 </head>
 <body>
@@ -1060,6 +1119,36 @@ $userRole = $_SESSION['rol'] ?? '';
                                 <?php echo $numCompras; ?> compra<?php echo $numCompras === 1 ? '' : 's'; ?>
                                 <?php if ($facturasProv): ?> &middot; <?php echo count($facturasProv); ?> factura<?php echo count($facturasProv) === 1 ? '' : 's'; ?><?php endif; ?>
                             </div>
+                            <?php if (mb_strtolower($prov['nombre'], 'UTF-8') !== 'sin proveedor'):
+                                $vis = $prov['visitador'] ?? null;
+                                $visNombre = trim($vis['visitador_nombre'] ?? '');
+                                $visTel = trim($vis['visitador_telefono'] ?? '');
+                            ?>
+                            <div class="provider-visitador"
+                                 data-proveedor-nombre="<?php echo htmlspecialchars($prov['nombre']); ?>"
+                                 data-vis-nombre="<?php echo htmlspecialchars($visNombre); ?>"
+                                 data-vis-telefono="<?php echo htmlspecialchars($visTel); ?>"
+                                 onclick="event.stopPropagation()">
+                                <i class="bi bi-person-badge"></i>
+                                <?php if ($visNombre !== ''): ?>
+                                    <span class="vis-label">Visitador:</span>
+                                    <strong><?php echo htmlspecialchars($visNombre); ?></strong>
+                                    <?php if ($visTel !== ''): ?>
+                                    <button type="button" class="vis-phone-btn" title="Llamar o escribir por WhatsApp" onclick="openVisitadorMenu(this)">
+                                        <i class="bi bi-telephone"></i> <?php echo htmlspecialchars($visTel); ?>
+                                    </button>
+                                    <?php endif; ?>
+                                    <button type="button" class="vis-edit-btn" title="Cambiar visitador" onclick="openVisitadorModal(this)">
+                                        <i class="bi bi-pencil"></i> Cambiar
+                                    </button>
+                                <?php else: ?>
+                                    <span class="vis-empty">Sin visitador</span>
+                                    <button type="button" class="vis-edit-btn" onclick="openVisitadorModal(this)">
+                                        <i class="bi bi-plus-lg"></i> Agregar visitador
+                                    </button>
+                                <?php endif; ?>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <div class="provider-totals">
@@ -1073,9 +1162,13 @@ $userRole = $_SESSION['rol'] ?? '';
                                 Q<?php echo number_format($prov['saldo'], 2); ?>
                             </strong>
                         </div>
+                        <?php if ($numCompras === 0): ?>
+                        <span class="badge" style="background: var(--color-bg); color: var(--color-text-light);">Sin compras</span>
+                        <?php else: ?>
                         <span class="badge <?php echo $provPagado ? 'badge-pagado' : 'badge-pendiente'; ?>">
                             <?php echo $provPagado ? 'Pagado' : 'Pendiente'; ?>
                         </span>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <div class="provider-body">
@@ -1250,6 +1343,50 @@ $userRole = $_SESSION['rol'] ?? '';
     </div>
 
     <!-- Payment Modal -->
+    <!-- Visitador del proveedor -->
+    <div class="modal-overlay" id="visitadorModal">
+        <div class="modal" style="max-width: 460px;">
+            <div class="modal-header">
+                <h2 class="modal-title" id="visitadorModalTitle">Visitador</h2>
+                <button class="modal-close" onclick="closeModal('visitadorModal')">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <form id="visitadorForm" onsubmit="guardarVisitador(event)">
+                <div class="modal-body">
+                    <p style="margin-bottom: 1rem; color: var(--color-text-light); font-size: 0.9rem;">
+                        Proveedor: <strong id="visitadorProveedor" style="color: var(--color-text);"></strong>
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Nombre del visitador *</label>
+                        <input type="text" id="visitadorNombre" class="form-control" maxlength="150" required placeholder="Ej. Carlos López">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Teléfono</label>
+                        <input type="tel" id="visitadorTelefono" class="form-control" maxlength="20" placeholder="Ej. 5555 1234" inputmode="tel">
+                    </div>
+                    <p style="font-size: 0.8rem; color: var(--color-text-light);">
+                        Si cambió el visitador, escribe los datos del nuevo y guarda: se reemplaza el anterior.
+                    </p>
+                </div>
+                <div style="padding: 1rem 1.5rem; border-top: 1px solid var(--color-border); display: flex; gap: 0.75rem; justify-content: space-between;">
+                    <button type="button" class="btn btn-secondary" id="visitadorQuitarBtn" onclick="quitarVisitador()">
+                        <i class="bi bi-person-x"></i> Quitar
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Guardar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="vis-menu" id="visitadorMenu">
+        <div class="vis-menu-title" id="visitadorMenuTitle"></div>
+        <a href="#" id="visitadorMenuWhatsapp" target="_blank" rel="noopener"><i class="bi bi-whatsapp"></i> Enviar WhatsApp</a>
+        <a href="#" id="visitadorMenuLlamar"><i class="bi bi-telephone-fill"></i> Llamar</a>
+    </div>
+
     <div class="modal-overlay" id="paymentModal">
         <div class="modal">
             <div class="modal-header">
@@ -1687,6 +1824,107 @@ $userRole = $_SESSION['rol'] ?? '';
 
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('show');
+        }
+
+        // ===== Visitador del proveedor =====
+        let visitadorProveedorActual = '';
+
+        // Número para WhatsApp/llamada: si son 8 dígitos se asume Guatemala (+502)
+        function telefonoInternacional(tel) {
+            let t = String(tel || '').replace(/\D/g, '');
+            if (t.length === 8) t = '502' + t;
+            return t;
+        }
+
+        function openVisitadorMenu(btn) {
+            const box = btn.closest('.provider-visitador');
+            const tel = telefonoInternacional(box.dataset.visTelefono);
+            const menu = document.getElementById('visitadorMenu');
+            if (!tel) return;
+            const saludo = 'Hola ' + (box.dataset.visNombre || '') + ', le escribimos de CLINOVA.';
+            document.getElementById('visitadorMenuTitle').textContent =
+                (box.dataset.visNombre || 'Visitador') + ' · ' + box.dataset.visTelefono;
+            document.getElementById('visitadorMenuWhatsapp').href = 'https://wa.me/' + tel + '?text=' + encodeURIComponent(saludo);
+            document.getElementById('visitadorMenuLlamar').href = 'tel:+' + tel;
+            const r = btn.getBoundingClientRect();
+            menu.classList.add('show');
+            const left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 8);
+            let top = r.bottom + 6;
+            if (top + menu.offsetHeight > window.innerHeight - 8) top = r.top - menu.offsetHeight - 6;
+            menu.style.left = Math.max(8, left) + 'px';
+            menu.style.top = top + 'px';
+        }
+
+        function closeVisitadorMenu() {
+            document.getElementById('visitadorMenu').classList.remove('show');
+        }
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#visitadorMenu') && !e.target.closest('.vis-phone-btn')) closeVisitadorMenu();
+        });
+        document.getElementById('visitadorMenu').addEventListener('click', (e) => {
+            if (e.target.closest('a')) setTimeout(closeVisitadorMenu, 50);
+        });
+        window.addEventListener('scroll', closeVisitadorMenu, true);
+
+        function openVisitadorModal(btn) {
+            const box = btn.closest('.provider-visitador');
+            visitadorProveedorActual = box.dataset.proveedorNombre;
+            const tiene = !!box.dataset.visNombre;
+            document.getElementById('visitadorModalTitle').textContent = tiene ? 'Cambiar visitador' : 'Agregar visitador';
+            document.getElementById('visitadorProveedor').textContent = visitadorProveedorActual;
+            document.getElementById('visitadorNombre').value = box.dataset.visNombre || '';
+            document.getElementById('visitadorTelefono').value = box.dataset.visTelefono || '';
+            document.getElementById('visitadorQuitarBtn').style.visibility = tiene ? 'visible' : 'hidden';
+            document.getElementById('visitadorModal').classList.add('show');
+            setTimeout(() => document.getElementById('visitadorNombre').focus(), 50);
+        }
+
+        async function enviarVisitador(nombre, telefono) {
+            showLoading('Guardando visitador...');
+            try {
+                const res = await fetch('save_visitador.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        proveedor: visitadorProveedorActual,
+                        visitador_nombre: nombre,
+                        visitador_telefono: telefono
+                    })
+                });
+                const result = await res.json();
+                hideLoading();
+                if (result.success) {
+                    uiToast(result.message, 'success');
+                    closeModal('visitadorModal');
+                    try { sessionStorage.setItem('purchasesTab', 'proveedores'); } catch (e) {}
+                    setTimeout(() => location.reload(), 700);
+                } else {
+                    uiToast('Error: ' + result.message, 'error', 5000);
+                }
+            } catch (err) {
+                hideLoading();
+                console.error(err);
+                uiToast('No se pudo guardar el visitador', 'error', 5000);
+            }
+        }
+
+        function guardarVisitador(e) {
+            e.preventDefault();
+            const nombre = document.getElementById('visitadorNombre').value.trim();
+            const telefono = document.getElementById('visitadorTelefono').value.trim();
+            const digitos = telefono.replace(/\D/g, '');
+            if (telefono && digitos.length < 8) {
+                uiToast('El teléfono debe tener al menos 8 dígitos', 'warning');
+                return;
+            }
+            enviarVisitador(nombre, telefono);
+        }
+
+        async function quitarVisitador() {
+            const ok = await uiConfirm('¿Quitar el visitador de ' + visitadorProveedorActual + '?', {
+                title: 'Quitar visitador', confirmText: 'Sí, quitar'
+            });
+            if (ok) enviarVisitador('', '');
         }
 
         function openPaymentModal(idCompra, saldo) {
