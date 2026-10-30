@@ -49,6 +49,67 @@ try {
         $medicamentosLista = [];
     }
 
+    // Datos para editar compras: abonos (automático de contado vs. manuales)
+    // y existencia actual en inventario de cada producto comprado
+    $abonosPorCompra = [];
+    foreach ($conn->query("
+        SELECT id_compra,
+               SUM(CASE WHEN observaciones LIKE 'Pago al contado%' THEN monto ELSE 0 END) AS auto_contado,
+               SUM(CASE WHEN observaciones LIKE 'Pago al contado%' THEN 0 ELSE monto END) AS manuales,
+               MAX(CASE WHEN observaciones LIKE 'Pago al contado%' THEN forma_pago END) AS forma_contado
+        FROM abonos_compras GROUP BY id_compra
+    ")->fetchAll(PDO::FETCH_ASSOC) as $ab) {
+        $abonosPorCompra[(int) $ab['id_compra']] = $ab;
+    }
+    $stockPorCompra = [];
+    foreach ($conn->query("
+        SELECT i.id_compra, i.cantidad_med
+        FROM inventario i
+        JOIN (SELECT id_compra, MIN(id_inventario) AS primero FROM inventario
+              WHERE id_compra IS NOT NULL GROUP BY id_compra) x ON x.primero = i.id_inventario
+    ")->fetchAll(PDO::FETCH_ASSOC) as $st) {
+        $stockPorCompra[(int) $st['id_compra']] = (int) $st['cantidad_med'];
+    }
+    $comprasEdicion = [];
+    foreach ($compras as $c) {
+        $ref = $c['codigo_referencia'] ?? 'SIN-REF-' . $c['id_compra'];
+        if (!isset($comprasEdicion[$ref])) {
+            $comprasEdicion[$ref] = [
+                'ref' => $ref,
+                'fecha_compra' => $c['fecha_compra'],
+                'tipo_factura' => $c['tipo_factura'],
+                'numero_factura' => $c['numero_factura'] ?? '',
+                'tipo_pago' => $c['tipo_pago'],
+                'proveedor' => $c['proveedor'] ?? '',
+                'observaciones' => $c['observaciones'] ?? '',
+                'forma_pago_contado' => 'Efectivo',
+                'items' => []
+            ];
+        }
+        $idc = (int) $c['id_compra'];
+        $stock = $stockPorCompra[$idc] ?? null;
+        if (!empty($abonosPorCompra[$idc]['forma_contado'])) {
+            $comprasEdicion[$ref]['forma_pago_contado'] = $abonosPorCompra[$idc]['forma_contado'];
+        }
+        $comprasEdicion[$ref]['items'][] = [
+            'id_compra' => $idc,
+            'nombre' => $c['nombre_medicamento'],
+            'codigo' => $c['codigo_medicamento'] ?? '',
+            'presentacion' => $c['presentacion'],
+            'cantidad' => (int) $c['cantidad'],
+            'precio_unitario' => (float) $c['precio_unitario'],
+            'precio_venta' => (float) $c['precio_venta'],
+            'lote' => $c['lote'] ?? '',
+            'fecha_vencimiento' => $c['fecha_vencimiento'] ?? '',
+            'total' => (float) $c['total'],
+            'abonado' => (float) $c['abonado'],
+            'abono_contado' => (float) ($abonosPorCompra[$idc]['auto_contado'] ?? 0),
+            'abonos_manuales' => (float) ($abonosPorCompra[$idc]['manuales'] ?? 0),
+            // unidades que ya salieron del inventario (no se puede bajar de aquí)
+            'cantidad_minima' => $stock === null ? 1 : max(1, (int) $c['cantidad'] - $stock),
+        ];
+    }
+
     // Catálogo de proveedores con su visitador (nombre y teléfono)
     $proveedoresCatalogo = [];
     try {
@@ -819,6 +880,25 @@ $userRole = $_SESSION['rol'] ?? '';
 
         .provider-card.hidden-by-filter { display: none; }
 
+        /* Editar compra */
+        .edit-pago-aviso {
+            margin-top: 0.75rem; padding: 0.75rem 1rem; border-radius: 10px;
+            font-size: 0.85rem; line-height: 1.45; display: none;
+        }
+        .edit-pago-aviso.show { display: block; }
+        .edit-pago-aviso.aviso-credito { background: #FFFAF0; border: 1px solid #FBD38D; color: #744210; }
+        .edit-pago-aviso.aviso-contado { background: #F0FFF4; border: 1px solid #9AE6B4; color: #22543D; }
+        .edit-resumen {
+            display: flex; justify-content: flex-end; gap: 2rem; flex-wrap: wrap;
+            margin-top: 1rem; padding: 0.85rem 1rem; background: var(--color-bg); border-radius: 10px;
+        }
+        .edit-resumen div { display: flex; flex-direction: column; align-items: flex-end; }
+        .edit-resumen .lbl { font-size: 0.72rem; text-transform: uppercase; color: var(--color-text-light); letter-spacing: 0.03em; }
+        .edit-resumen strong { font-size: 1.1rem; }
+        .items-table .med-ro { font-weight: 600; font-size: 0.85rem; }
+        .items-table .med-ro small { display: block; font-weight: 400; color: var(--color-text-light); }
+        .items-table .min-hint { display: block; font-size: 0.7rem; color: var(--color-text-light); margin-top: 2px; }
+
         /* Visitador del proveedor */
         .provider-visitador {
             display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem;
@@ -947,6 +1027,7 @@ $userRole = $_SESSION['rol'] ?? '';
                                     'proveedor' => trim($compra['proveedor'] ?? '') !== '' ? $compra['proveedor'] : $compra['casa_farmaceutica'],
                                     'factura' => $compra['numero_factura'] ?? '',
                                     'tipo_factura' => $compra['tipo_factura'],
+                                    'tipo_pago' => $compra['tipo_pago'],
                                     'total' => 0,
                                     'saldo' => 0,
                                     'estado' => $compra['estado'], // Status of the batch? Or mixed?
@@ -985,6 +1066,7 @@ $userRole = $_SESSION['rol'] ?? '';
                             <td><?php echo date('d/m/Y', strtotime($group['fecha'])); ?></td>
                             <td>
                                 <span class="badge badge-secondary"><?php echo htmlspecialchars($group['tipo_factura']); ?></span>
+                                <br><small class="text-muted"><?php echo htmlspecialchars($group['tipo_pago']); ?></small>
                             </td>
                             <td><strong>Q<?php echo number_format($group['total'], 2); ?></strong></td>
                             <td>
@@ -1013,6 +1095,7 @@ $userRole = $_SESSION['rol'] ?? '';
                                         <?php else: ?>
                                         <li><span class="dropdown-item-text text-muted">Pagado</span></li>
                                         <?php endif; ?>
+                                        <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); event.stopPropagation(); openEditPurchase(<?php echo htmlspecialchars(json_encode((string) $ref), ENT_QUOTES); ?>)"><i class="bi bi-pencil"></i> Editar compra</a></li>
                                         <!-- Delete All removed as requested -->
                                     </ul>
                                 </div>
@@ -1343,6 +1426,100 @@ $userRole = $_SESSION['rol'] ?? '';
     </div>
 
     <!-- Payment Modal -->
+    <!-- Editar compra -->
+    <div class="modal-overlay" id="editPurchaseModal">
+        <div class="modal modal-wide">
+            <div class="modal-header">
+                <h2 class="modal-title" id="editPurchaseTitle">Editar Compra</h2>
+                <button class="modal-close" onclick="closeModal('editPurchaseModal')">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <form id="editPurchaseForm" onsubmit="submitEditPurchase(event)">
+                <div class="modal-body">
+                    <div class="section-title">Datos Generales</div>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label class="form-label">Fecha de Compra *</label>
+                            <input type="date" id="editFecha" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Tipo de Factura *</label>
+                            <select id="editTipoFactura" class="form-control" required>
+                                <option value="Factura">Factura</option>
+                                <option value="Nota de Envío">Nota de Envío</option>
+                                <option value="Consumidor Final">Consumidor Final</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Número de Factura/Envío</label>
+                            <input type="text" id="editNumeroFactura" class="form-control" placeholder="Opcional" maxlength="50">
+                        </div>
+                    </div>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label class="form-label">Tipo de Pago *</label>
+                            <select id="editTipoPago" class="form-control" required onchange="updateEditPreview()">
+                                <option value="Al Contado">Al Contado</option>
+                                <option value="Crédito 30 días">Crédito 30 días</option>
+                                <option value="Crédito 60 días">Crédito 60 días</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Proveedor *</label>
+                            <input type="text" id="editProveedor" class="form-control" required autocomplete="off" maxlength="150">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Observaciones Generales</label>
+                            <input type="text" id="editObservaciones" class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-row-3" id="editFormaPagoRow" style="display: none;">
+                        <div class="form-group">
+                            <label class="form-label">Forma del pago al contado</label>
+                            <select id="editFormaPago" class="form-control">
+                                <option value="Efectivo">Efectivo</option>
+                                <option value="Transferencia">Transferencia</option>
+                                <option value="Cheque">Cheque</option>
+                                <option value="Tarjeta Débito">Tarjeta Débito</option>
+                                <option value="Tarjeta Crédito">Tarjeta Crédito</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="edit-pago-aviso" id="editPagoAviso"></div>
+
+                    <div class="section-title" style="margin-top: 1.25rem;">Medicamentos</div>
+                    <div class="items-table-container">
+                        <table class="items-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 26%">Medicamento</th>
+                                    <th style="width: 11%">Lote</th>
+                                    <th style="width: 13%">Vence</th>
+                                    <th style="width: 10%">Cant.</th>
+                                    <th style="width: 13%">P. Compra</th>
+                                    <th style="width: 13%">P. Venta</th>
+                                    <th style="width: 14%">Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody id="editItemsBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="edit-resumen">
+                        <div><span class="lbl">Total compra</span><strong>Q<span id="editTotal">0.00</span></strong></div>
+                        <div><span class="lbl">Pagado</span><strong>Q<span id="editAbonado">0.00</span></strong></div>
+                        <div><span class="lbl">Saldo</span><strong id="editSaldoWrap">Q<span id="editSaldo">0.00</span></strong></div>
+                    </div>
+                </div>
+                <div style="padding: 1.25rem 1.5rem; border-top: 1px solid var(--color-border);">
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        <i class="bi bi-save"></i> Guardar Cambios
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Visitador del proveedor -->
     <div class="modal-overlay" id="visitadorModal">
         <div class="modal" style="max-width: 460px;">
@@ -1687,6 +1864,7 @@ $userRole = $_SESSION['rol'] ?? '';
         window.addEventListener('resize', () => autocompleteDropdown?.classList.remove('show'));
 
         attachAutocomplete(document.getElementById('proveedorInput'), proveedoresData);
+        attachAutocomplete(document.getElementById('editProveedor'), proveedoresData);
 
         function openAddModal() {
             document.getElementById('addModal').classList.add('show');
@@ -1824,6 +2002,191 @@ $userRole = $_SESSION['rol'] ?? '';
 
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('show');
+        }
+
+        // ===== Editar compra =====
+        const comprasEdicion = <?php echo json_encode($comprasEdicion, JSON_UNESCAPED_UNICODE); ?>;
+        let compraEditando = null;
+        const fmt2 = n => (Math.round((parseFloat(n) || 0) * 100) / 100).toFixed(2);
+        const fmtMoney = n => (Math.round((parseFloat(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        function openEditPurchase(ref) {
+            const c = comprasEdicion[ref];
+            if (!c) { uiToast('No se encontró la compra', 'error'); return; }
+            compraEditando = c;
+            document.getElementById('editPurchaseTitle').textContent = 'Editar Compra #' + c.ref;
+            document.getElementById('editFecha').value = (c.fecha_compra || '').substring(0, 10);
+            document.getElementById('editTipoFactura').value = c.tipo_factura || 'Factura';
+            document.getElementById('editNumeroFactura').value = c.numero_factura || '';
+            document.getElementById('editTipoPago').value = c.tipo_pago || 'Al Contado';
+            document.getElementById('editProveedor').value = c.proveedor || '';
+            document.getElementById('editObservaciones').value = c.observaciones || '';
+            document.getElementById('editFormaPago').value = c.forma_pago_contado || 'Efectivo';
+
+            const tbody = document.getElementById('editItemsBody');
+            tbody.innerHTML = '';
+            c.items.forEach(it => {
+                const tr = document.createElement('tr');
+                tr.dataset.id = it.id_compra;
+                tr.innerHTML = `
+                    <td><div class="med-ro"></div></td>
+                    <td><input type="text" data-f="lote" maxlength="50" placeholder="Lote"></td>
+                    <td><input type="date" data-f="fecha_vencimiento"></td>
+                    <td><input type="number" data-f="cantidad" min="${it.cantidad_minima}" step="1" required oninput="updateEditPreview()"></td>
+                    <td><input type="number" data-f="precio_unitario" min="0" step="0.01" required oninput="updateEditPreview()"></td>
+                    <td><input type="number" data-f="precio_venta" min="0" step="0.01" required></td>
+                    <td style="text-align: right; font-weight: 600;">Q<span class="row-total">0.00</span></td>`;
+                const med = tr.querySelector('.med-ro');
+                med.textContent = it.nombre;
+                const sub = document.createElement('small');
+                sub.textContent = [it.codigo, it.presentacion].filter(Boolean).join(' · ');
+                med.appendChild(sub);
+                tr.querySelector('[data-f=lote]').value = it.lote || '';
+                tr.querySelector('[data-f=fecha_vencimiento]').value = (it.fecha_vencimiento || '').substring(0, 10);
+                tr.querySelector('[data-f=cantidad]').value = it.cantidad;
+                tr.querySelector('[data-f=precio_unitario]').value = fmt2(it.precio_unitario);
+                tr.querySelector('[data-f=precio_venta]').value = fmt2(it.precio_venta);
+                if (it.cantidad_minima > 1) {
+                    const hint = document.createElement('span');
+                    hint.className = 'min-hint';
+                    hint.textContent = 'Mín. ' + it.cantidad_minima + ' vendidos';
+                    hint.title = 'Ya salieron ' + it.cantidad_minima + ' unidades del inventario; no se puede bajar de ahí.';
+                    tr.querySelector('[data-f=cantidad]').after(hint);
+                }
+                tbody.appendChild(tr);
+            });
+
+            updateEditPreview();
+            document.getElementById('editPurchaseModal').classList.add('show');
+        }
+
+        // Calcula cómo quedará la compra con el tipo de pago elegido (mismo cálculo que el servidor)
+        function calcularEdicion() {
+            const contado = document.getElementById('editTipoPago').value === 'Al Contado';
+            let total = 0, abonado = 0, manuales = 0, contadoActual = 0, contadoNuevo = 0;
+            document.querySelectorAll('#editItemsBody tr').forEach(tr => {
+                const it = compraEditando.items.find(i => i.id_compra == tr.dataset.id);
+                const cant = parseInt(tr.querySelector('[data-f=cantidad]').value) || 0;
+                const pu = parseFloat(tr.querySelector('[data-f=precio_unitario]').value) || 0;
+                const t = Math.round(cant * pu * 100) / 100;
+                tr.querySelector('.row-total').textContent = fmtMoney(t);
+                total += t;
+                manuales += it.abonos_manuales;
+                contadoActual += it.abono_contado;
+                if (contado) {
+                    contadoNuevo += Math.max(0, t - it.abonos_manuales);
+                    abonado += t;
+                } else {
+                    abonado += Math.min(it.abonos_manuales, t);
+                }
+            });
+            return { contado, total, abonado, saldo: Math.max(0, total - abonado), manuales, contadoActual, contadoNuevo };
+        }
+
+        function updateEditPreview() {
+            if (!compraEditando) return;
+            const r = calcularEdicion();
+            document.getElementById('editTotal').textContent = fmtMoney(r.total);
+            document.getElementById('editAbonado').textContent = fmtMoney(r.abonado);
+            document.getElementById('editSaldo').textContent = fmtMoney(r.saldo);
+            document.getElementById('editSaldoWrap').style.color = r.saldo > 0.009 ? 'var(--color-danger)' : 'var(--color-success)';
+            document.getElementById('editFormaPagoRow').style.display = r.contado && r.contadoNuevo > 0.009 ? '' : 'none';
+
+            const aviso = document.getElementById('editPagoAviso');
+            const tipoOriginal = compraEditando.tipo_pago;
+            const tipoNuevo = document.getElementById('editTipoPago').value;
+            let html = '';
+            if (!r.contado && r.contadoActual > 0.009) {
+                html = `<strong><i class="bi bi-exclamation-triangle"></i> Al guardar como ${escapeHtmlText(tipoNuevo)}:</strong><br>` +
+                    `• Se anula el pago automático al contado de <strong>Q${fmtMoney(r.contadoActual)}</strong> (deja de aparecer como egreso "Pago a proveedor" en Reportes).<br>` +
+                    (r.manuales > 0.009 ? `• Se conservan los abonos registrados a mano: Q${fmtMoney(r.manuales)}.<br>` : '') +
+                    `• La compra queda con saldo pendiente de <strong>Q${fmtMoney(r.saldo)}</strong> para irlo abonando.`;
+                aviso.className = 'edit-pago-aviso aviso-credito show';
+            } else if (r.contado && tipoOriginal !== 'Al Contado') {
+                html = `<strong><i class="bi bi-info-circle"></i> Al guardar como Al Contado:</strong><br>` +
+                    (r.contadoNuevo > 0.009
+                        ? `• Se registra un pago de <strong>Q${fmtMoney(r.contadoNuevo)}</strong> con fecha de la compra (aparecerá como egreso en Reportes).<br>`
+                        : '') +
+                    (r.manuales > 0.009 ? `• Se conservan los abonos ya registrados: Q${fmtMoney(r.manuales)}.<br>` : '') +
+                    `• La compra queda <strong>Pagada</strong> (saldo Q0.00).`;
+                aviso.className = 'edit-pago-aviso aviso-contado show';
+            } else {
+                aviso.className = 'edit-pago-aviso';
+            }
+            aviso.innerHTML = html;
+        }
+
+        function escapeHtmlText(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        async function submitEditPurchase(e) {
+            e.preventDefault();
+            if (!compraEditando) return;
+            const items = [];
+            for (const tr of document.querySelectorAll('#editItemsBody tr')) {
+                const it = compraEditando.items.find(i => i.id_compra == tr.dataset.id);
+                const cant = parseInt(tr.querySelector('[data-f=cantidad]').value) || 0;
+                if (cant < it.cantidad_minima) {
+                    uiToast(`${it.nombre}: la cantidad mínima es ${it.cantidad_minima} (ya salieron del inventario).`, 'warning', 5000);
+                    return;
+                }
+                const tItem = cant * (parseFloat(tr.querySelector('[data-f=precio_unitario]').value) || 0);
+                if (it.abonos_manuales > tItem + 0.009) {
+                    uiToast(`${it.nombre}: ya tiene abonos por Q${fmtMoney(it.abonos_manuales)}, más que el nuevo total.`, 'warning', 5000);
+                    return;
+                }
+                items.push({
+                    id_compra: it.id_compra,
+                    cantidad: cant,
+                    precio_unitario: parseFloat(tr.querySelector('[data-f=precio_unitario]').value) || 0,
+                    precio_venta: parseFloat(tr.querySelector('[data-f=precio_venta]').value) || 0,
+                    lote: tr.querySelector('[data-f=lote]').value.trim(),
+                    fecha_vencimiento: tr.querySelector('[data-f=fecha_vencimiento]').value
+                });
+            }
+
+            const tipoNuevo = document.getElementById('editTipoPago').value;
+            const r = calcularEdicion();
+            if (tipoNuevo !== compraEditando.tipo_pago) {
+                const ok = await uiConfirm(
+                    `Cambiar el tipo de pago de "${compraEditando.tipo_pago}" a "${tipoNuevo}". ` +
+                    `La compra quedará con saldo de Q${fmtMoney(r.saldo)}. ¿Continuar?`,
+                    { title: 'Confirmar cambio de pago', confirmText: 'Sí, guardar', danger: false }
+                );
+                if (!ok) return;
+            }
+
+            showLoading('Guardando cambios...');
+            try {
+                const res = await fetch('update_purchase.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        fecha_compra: document.getElementById('editFecha').value,
+                        tipo_factura: document.getElementById('editTipoFactura').value,
+                        numero_factura: document.getElementById('editNumeroFactura').value.trim(),
+                        tipo_pago: tipoNuevo,
+                        proveedor: document.getElementById('editProveedor').value.trim(),
+                        observaciones: document.getElementById('editObservaciones').value.trim(),
+                        forma_pago_contado: document.getElementById('editFormaPago').value,
+                        items: items
+                    })
+                });
+                const result = await res.json();
+                hideLoading();
+                if (result.success) {
+                    uiToast(result.message + ' · Saldo Q' + fmtMoney(result.saldo), 'success');
+                    closeModal('editPurchaseModal');
+                    setTimeout(() => location.reload(), 900);
+                } else {
+                    uiToast('Error: ' + result.message, 'error', 6000);
+                }
+            } catch (err) {
+                hideLoading();
+                console.error(err);
+                uiToast('No se pudo guardar la compra', 'error', 5000);
+            }
         }
 
         // ===== Visitador del proveedor =====
