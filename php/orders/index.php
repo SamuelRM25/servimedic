@@ -57,6 +57,23 @@ try {
     $stmt->execute();
     $pedidos = array_values($stmt->fetchAll(PDO::FETCH_ASSOC));
 
+    // Mes de cada documento (fecha de negocio en Guatemala), para dividir y filtrar por mes
+    $mesesNombre = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio',
+                    'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    $nombreMes = function (string $ym) use ($mesesNombre): string {
+        [$y, $m] = array_map('intval', explode('-', $ym));
+        return ($mesesNombre[$m] ?? $ym) . ' ' . $y;
+    };
+    $mesesDisponibles = [];
+    foreach ($pedidos as &$pedRef) {
+        $pedRef['mes'] = fechaGT($pedRef['fecha_pedido'], 'Y-m') ?: '0000-00';
+        $mesesDisponibles[$pedRef['mes']] = true;
+    }
+    unset($pedRef);
+    $mesActual = (new DateTime('now', new DateTimeZone('America/Guatemala')))->format('Y-m');
+    $mesesDisponibles[$mesActual] = true;
+    krsort($mesesDisponibles);
+
     // Separar en pestañas.
     // Una cotización procesada (estado Completado) ya es funcionalmente una
     // venta: se muestra en la pestaña Ventas para que el usuario la encuentre
@@ -257,6 +274,39 @@ try {
         .tab.active .tab-count {
             background: rgba(255, 255, 255, 0.25);
         }
+
+        .filters-bar {
+            display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+            margin: -0.5rem 0 1.25rem;
+        }
+        .filters-bar .filter-group { display: flex; align-items: center; gap: 0.5rem; }
+        .filters-bar label { font-size: 0.85rem; font-weight: 600; color: var(--color-text-light); }
+        .filters-bar select {
+            padding: 0.5rem 2rem 0.5rem 0.85rem; border: 2px solid var(--color-border); border-radius: 10px;
+            font-family: var(--font-family); font-size: 0.9rem; font-weight: 600; color: var(--color-text);
+            background: var(--color-white); cursor: pointer;
+        }
+        .filters-bar select:focus { outline: none; border-color: var(--color-blue); }
+        .chip-filter {
+            display: inline-flex; align-items: center; gap: 0.45rem;
+            padding: 0.5rem 0.95rem; border-radius: 999px; border: 2px solid #F6E05E;
+            background: #FFFFF0; color: #744210; font-family: var(--font-family);
+            font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;
+        }
+        .chip-filter:hover { background: #FEFCBF; }
+        .chip-filter.active { background: #D69E2E; border-color: #D69E2E; color: #fff; }
+        .chip-filter .chip-count {
+            background: rgba(0, 0, 0, 0.1); padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.75rem;
+        }
+        .chip-filter.active .chip-count { background: rgba(255, 255, 255, 0.25); }
+        .filters-hint { font-size: 0.8rem; color: var(--color-text-light); margin-left: auto; }
+        tr.month-sep td {
+            background: linear-gradient(90deg, #EBF8FF, #F7FAFC);
+            padding: 0.6rem 1rem; font-weight: 700; color: var(--color-blue-dark);
+            border-top: 2px solid #BEE3F8; text-align: left;
+        }
+        tr.month-sep .month-sep-meta { font-weight: 500; color: var(--color-text-light); margin-left: 0.75rem; font-size: 0.85rem; }
+        tr.filter-empty td { text-align: center; padding: 2.5rem 1rem; color: var(--color-text-light); }
 
         .table-container {
             background: var(--color-white);
@@ -930,6 +980,26 @@ try {
             </button>
         </div>
 
+        <!-- Filtros: mes y pendientes de pago -->
+        <div class="filters-bar">
+            <div class="filter-group">
+                <label for="filtroMes"><i class="bi bi-calendar3"></i> Mes</label>
+                <select id="filtroMes" onchange="aplicarFiltros()">
+                    <option value="">Todos los meses</option>
+                    <?php foreach (array_keys($mesesDisponibles) as $ym): ?>
+                    <option value="<?php echo $ym; ?>" <?php echo $ym === $mesActual ? 'selected' : ''; ?>>
+                        <?php echo $nombreMes($ym) . ($ym === $mesActual ? ' (actual)' : ''); ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <button type="button" class="chip-filter" id="filtroCredito" onclick="toggleFiltroCredito()" title="Ventas a crédito que aún no se han pagado">
+                <i class="bi bi-hourglass-split"></i> Pendiente Crédito
+                <span class="chip-count" id="filtroCreditoCount">0</span>
+            </button>
+            <span class="filters-hint" id="filtrosHint"></span>
+        </div>
+
         <!-- Tabla Cotizaciones -->
         <div class="table-container tab-panel" id="panel-cotizaciones">
             <div class="table-wrapper">
@@ -951,8 +1021,11 @@ try {
                         <?php if (!$cotizaciones): ?>
                         <tr class="empty-row"><td colspan="9">No hay cotizaciones registradas</td></tr>
                         <?php endif; ?>
-                        <?php foreach ($cotizaciones as $p): ?>
-                        <tr>
+                        <?php $mesPrevio = null; foreach ($cotizaciones as $p): ?>
+                        <?php if ($p['mes'] !== $mesPrevio): $mesPrevio = $p['mes']; ?>
+                        <tr class="month-sep" data-mes="<?php echo $p['mes']; ?>"><td colspan="9"><i class="bi bi-calendar3"></i> <?php echo $nombreMes($p['mes']); ?><span class="month-sep-meta"></span></td></tr>
+                        <?php endif; ?>
+                        <tr class="doc-row" data-mes="<?php echo $p['mes']; ?>" data-pago="<?php echo htmlspecialchars($p['estado_pago']); ?>" data-total="<?php echo (float) $p['total']; ?>">
                             <td><strong><?php echo htmlspecialchars($p['cotizacion_numero'] ?: ('COT-' . $p['id_pedido'])); ?></strong></td>
                             <td><?php echo fechaGT($p['fecha_pedido']); ?></td>
                             <td><strong><?php echo htmlspecialchars($p['cliente_nombre']); ?></strong></td>
@@ -1030,8 +1103,11 @@ try {
                         <?php if (!$ventas): ?>
                         <tr class="empty-row"><td colspan="13">No hay ventas registradas en este módulo</td></tr>
                         <?php endif; ?>
-                        <?php foreach ($ventas as $p): ?>
-                        <tr>
+                        <?php $mesPrevio = null; foreach ($ventas as $p): ?>
+                        <?php if ($p['mes'] !== $mesPrevio): $mesPrevio = $p['mes']; ?>
+                        <tr class="month-sep" data-mes="<?php echo $p['mes']; ?>"><td colspan="13"><i class="bi bi-calendar3"></i> <?php echo $nombreMes($p['mes']); ?><span class="month-sep-meta"></span></td></tr>
+                        <?php endif; ?>
+                        <tr class="doc-row" data-mes="<?php echo $p['mes']; ?>" data-pago="<?php echo htmlspecialchars($p['estado_pago']); ?>" data-total="<?php echo (float) $p['total']; ?>">
                             <td>
                                 <?php if ($p['es_cotizacion']): ?>
                                     <span title="Venta procesada desde cotización"><?php echo htmlspecialchars($p['cotizacion_numero'] ?: 'COT-'.$p['id_pedido']); ?></span>
@@ -1144,8 +1220,11 @@ try {
                         <?php if (!$cancelados): ?>
                         <tr class="empty-row"><td colspan="8">No hay documentos cancelados</td></tr>
                         <?php endif; ?>
-                        <?php foreach ($cancelados as $p): ?>
-                        <tr>
+                        <?php $mesPrevio = null; foreach ($cancelados as $p): ?>
+                        <?php if ($p['mes'] !== $mesPrevio): $mesPrevio = $p['mes']; ?>
+                        <tr class="month-sep" data-mes="<?php echo $p['mes']; ?>"><td colspan="8"><i class="bi bi-calendar3"></i> <?php echo $nombreMes($p['mes']); ?><span class="month-sep-meta"></span></td></tr>
+                        <?php endif; ?>
+                        <tr class="doc-row" data-mes="<?php echo $p['mes']; ?>" data-pago="<?php echo htmlspecialchars($p['estado_pago']); ?>" data-total="<?php echo (float) $p['total']; ?>">
                             <td><?php echo $p['es_cotizacion'] ? htmlspecialchars($p['cotizacion_numero'] ?: ('COT-' . $p['id_pedido'])) : $p['id_pedido']; ?></td>
                             <td>
                                 <span class="badge <?php echo $p['es_cotizacion'] ? 'badge-cotizacion' : 'badge-nota'; ?>">
@@ -1699,7 +1778,7 @@ try {
             document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
             document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
             document.getElementById('panel-' + tab).style.display = '';
-            updateStats(tab);
+            aplicarFiltros();
         }
 
         // Al cargar, si veníamos de procesar una cotización, activar Ventas
@@ -1713,28 +1792,119 @@ try {
             } catch (e) {}
         })();
 
+        // ============ Filtros por mes y pendientes de crédito ============
+        // (var / function para que existan aunque switchTab se llame antes de esta sección)
+        var filtroCredito = false;
+
+        function nombreMesJs(ym) {
+            const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            if (!ym) return 'Todos los meses';
+            const [y, m] = ym.split('-').map(Number);
+            return (MESES[m - 1] || ym) + ' ' + y;
+        }
+        function fmtQ2(n) {
+            return 'Q' + (Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        // Documentos de una pestaña que pasan los filtros actuales
+        function filtrarLista(tab, ignorarCredito) {
+            const mes = document.getElementById('filtroMes').value;
+            return (tabsData[tab] || []).filter(p =>
+                (!mes || p.mes === mes) &&
+                (ignorarCredito || !filtroCredito || p.estado_pago === 'Pendiente Crédito')
+            );
+        }
+
+        function toggleFiltroCredito() {
+            filtroCredito = !filtroCredito;
+            // Los pendientes de crédito están en la pestaña Ventas
+            if (filtroCredito && currentTab !== 'ventas') switchTab('ventas');
+            else aplicarFiltros();
+        }
+
+        function aplicarFiltros() {
+            const mes = document.getElementById('filtroMes').value;
+            const credito = filtroCredito && currentTab === 'ventas';
+            document.getElementById('filtroCredito').classList.toggle('active', filtroCredito);
+            try { sessionStorage.setItem('pedidosFiltros', JSON.stringify({ mes: mes, credito: filtroCredito, tab: currentTab })); } catch (e) {}
+
+            ['cotizaciones', 'ventas', 'cancelados'].forEach(tab => {
+                const panel = document.getElementById('panel-' + tab);
+                const tbody = panel.querySelector('tbody');
+                const aplicaCredito = filtroCredito && tab === 'ventas';
+                const porMes = {};
+                tbody.querySelectorAll('tr.doc-row').forEach(tr => {
+                    const ok = (!mes || tr.dataset.mes === mes) && (!aplicaCredito || tr.dataset.pago === 'Pendiente Crédito');
+                    tr.style.display = ok ? '' : 'none';
+                    if (ok) {
+                        const g = porMes[tr.dataset.mes] || (porMes[tr.dataset.mes] = { n: 0, total: 0 });
+                        g.n++; g.total += parseFloat(tr.dataset.total) || 0;
+                    }
+                });
+                // Separadores de mes: solo con "Todos los meses" y si el mes tiene filas visibles
+                tbody.querySelectorAll('tr.month-sep').forEach(tr => {
+                    const g = porMes[tr.dataset.mes];
+                    tr.style.display = (!mes && g) ? '' : 'none';
+                    if (g) tr.querySelector('.month-sep-meta').textContent =
+                        `${g.n} documento${g.n === 1 ? '' : 's'} · ${fmtQ2(g.total)}`;
+                });
+                // Mensaje cuando el filtro no deja nada
+                let vacio = tbody.querySelector('tr.filter-empty');
+                const hayDocs = tbody.querySelector('tr.doc-row') !== null;
+                const visibles = Object.values(porMes).reduce((s, g) => s + g.n, 0);
+                if (hayDocs && visibles === 0) {
+                    if (!vacio) {
+                        vacio = document.createElement('tr');
+                        vacio.className = 'filter-empty';
+                        vacio.innerHTML = `<td colspan="${panel.querySelectorAll('thead th').length}"></td>`;
+                        tbody.appendChild(vacio);
+                    }
+                    vacio.firstElementChild.textContent = aplicaCredito
+                        ? `No hay ventas pendientes de crédito${mes ? ' en ' + nombreMesJs(mes) : ''}`
+                        : `No hay documentos en ${nombreMesJs(mes)}`;
+                    vacio.style.display = '';
+                } else if (vacio) {
+                    vacio.style.display = 'none';
+                }
+                // Contador de la pestaña
+                const tabCount = document.querySelector(`.tab[data-tab="${tab}"] .tab-count`);
+                if (tabCount) tabCount.textContent = filtrarLista(tab).length;
+            });
+
+            // Chip: cuántas ventas a crédito pendientes hay en el mes elegido
+            document.getElementById('filtroCreditoCount').textContent =
+                filtrarLista('ventas', true).filter(p => p.estado_pago === 'Pendiente Crédito').length;
+            document.getElementById('filtrosHint').textContent = mes
+                ? 'Mostrando ' + nombreMesJs(mes) + (credito ? ' · solo pendientes de crédito' : '')
+                : (credito ? 'Mostrando todos los meses · solo pendientes de crédito' : 'Mostrando todos los meses, divididos por mes');
+            updateStats(currentTab);
+        }
+
         function updateStats(tab) {
-            const list = tabsData[tab];
+            const list = filtrarLista(tab);
             const monto = list.reduce((s, p) => s + parseFloat(p.total), 0);
+            const sufijoMes = ' · ' + nombreMesJs(document.getElementById('filtroMes').value);
             if (tab === 'cotizaciones') {
-                document.getElementById('statLabel1').textContent = 'Total Cotizaciones';
+                document.getElementById('statLabel1').textContent = 'Total Cotizaciones' + sufijoMes;
                 document.getElementById('statValue1').textContent = list.length;
-                document.getElementById('statLabel2').textContent = 'Monto Total Cotizaciones';
-                document.getElementById('statValue2').textContent = 'Q' + monto.toFixed(2);
+                document.getElementById('statLabel2').textContent = 'Monto Total Cotizaciones' + sufijoMes;
+                document.getElementById('statValue2').textContent = fmtQ2(monto);
                 document.getElementById('statLabel3').textContent = 'Pendientes';
                 document.getElementById('statValue3').textContent = list.filter(p => p.estado_pedido === 'Pendiente').length;
             } else if (tab === 'ventas') {
-                document.getElementById('statLabel1').textContent = 'Total Ventas';
+                const pendCred = filtrarLista('ventas', true).filter(p => p.estado_pago === 'Pendiente Crédito');
+                const montoPend = pendCred.reduce((s, p) => s + parseFloat(p.total), 0);
+                document.getElementById('statLabel1').textContent = (filtroCredito ? 'Ventas Pendientes de Crédito' : 'Total Ventas') + sufijoMes;
                 document.getElementById('statValue1').textContent = list.length;
-                document.getElementById('statLabel2').textContent = 'Monto Total Ventas';
-                document.getElementById('statValue2').textContent = 'Q' + monto.toFixed(2);
-                document.getElementById('statLabel3').textContent = 'Descuentos (solo Reportes)';
-                document.getElementById('statValue3').textContent = '\u2014';
+                document.getElementById('statLabel2').textContent = (filtroCredito ? 'Monto Pendiente de Cobro' : 'Monto Total Ventas') + sufijoMes;
+                document.getElementById('statValue2').textContent = fmtQ2(monto);
+                document.getElementById('statLabel3').textContent = 'Por cobrar (Pendiente Crédito)' + sufijoMes;
+                document.getElementById('statValue3').textContent = fmtQ2(montoPend) + ' · ' + pendCred.length;
             } else {
-                document.getElementById('statLabel1').textContent = 'Total Cancelados';
+                document.getElementById('statLabel1').textContent = 'Total Cancelados' + sufijoMes;
                 document.getElementById('statValue1').textContent = list.length;
-                document.getElementById('statLabel2').textContent = 'Monto Cancelado';
-                document.getElementById('statValue2').textContent = 'Q' + monto.toFixed(2);
+                document.getElementById('statLabel2').textContent = 'Monto Cancelado' + sufijoMes;
+                document.getElementById('statValue2').textContent = fmtQ2(monto);
                 document.getElementById('statLabel3').textContent = '-';
                 document.getElementById('statValue3').textContent = '0';
             }
@@ -2739,7 +2909,22 @@ try {
             });
         }
 
-        updateStats('cotizaciones');
+        (function restaurarFiltros() {
+            try {
+                const f = JSON.parse(sessionStorage.getItem('pedidosFiltros') || 'null');
+                if (f) {
+                    const sel = document.getElementById('filtroMes');
+                    if (f.mes === '' || [...sel.options].some(o => o.value === f.mes)) sel.value = f.mes;
+                    filtroCredito = !!f.credito;
+                    // volver a la pestaña donde estaba (salvo que ya se haya elegido una al procesar)
+                    if (f.tab && tabsData[f.tab] && currentTab === 'cotizaciones') {
+                        switchTab(f.tab);
+                        return;
+                    }
+                }
+            } catch (e) {}
+            aplicarFiltros();
+        })();
 
         if (new URLSearchParams(location.search).get('nueva_venta') === '1') {
             openNewOrder();
