@@ -789,5 +789,6 @@ function submitClienteForm(e) {
         });
 }
 </script>
+    <?php include __DIR__ . '/../includes/ui_feedback.php'; ?>
 </body>
 </html>
