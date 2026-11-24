@@ -1096,6 +1096,10 @@ $userRole = $_SESSION['rol'] ?? '';
                                         <li><span class="dropdown-item-text text-muted">Pagado</span></li>
                                         <?php endif; ?>
                                         <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); event.stopPropagation(); openEditPurchase(<?php echo htmlspecialchars(json_encode((string) $ref), ENT_QUOTES); ?>)"><i class="bi bi-pencil"></i> Editar compra</a></li>
+                                        <?php if ($userRole === 'Administrador'): ?>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item text-danger" href="#" onclick="event.preventDefault(); event.stopPropagation(); eliminarCompra(<?php echo htmlspecialchars(json_encode((string) $ref), ENT_QUOTES); ?>)"><i class="bi bi-trash"></i> Eliminar compra</a></li>
+                                        <?php endif; ?>
                                         <!-- Delete All removed as requested -->
                                     </ul>
                                 </div>
@@ -2002,6 +2006,37 @@ $userRole = $_SESSION['rol'] ?? '';
 
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('show');
+        }
+
+        // ===== Eliminar compra (solo Administrador) =====
+        async function eliminarCompra(ref) {
+            const c = comprasEdicion[ref];
+            if (!c) { uiToast('No se encontró la compra', 'error'); return; }
+            const total = c.items.reduce((s, it) => s + (parseFloat(it.total) || 0), 0);
+            const abonos = c.items.reduce((s, it) => s + (parseFloat(it.abonado) || 0), 0);
+            let msg = `¿Eliminar la compra #${c.ref} de ${c.proveedor || 'proveedor'} (${c.items.length} producto${c.items.length === 1 ? '' : 's'}, Q${total.toFixed(2)})? ` +
+                'Se quitará su producto del inventario';
+            if (abonos > 0.009) msg += ` y se borrarán sus pagos (Q${abonos.toFixed(2)}), que dejarán de aparecer en Reportes`;
+            msg += '. Esta acción no se puede deshacer.';
+            const ok = await uiConfirm(msg, { title: 'Eliminar compra', confirmText: 'Sí, eliminar' });
+            if (!ok) return;
+            try {
+                const res = await fetch('delete_purchase.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: c.items.map(it => it.id_compra) })
+                });
+                const r = await res.json();
+                if (r.success) {
+                    uiToast(r.message, 'success');
+                    setTimeout(() => location.reload(), 900);
+                } else {
+                    uiAlert(r.message, { title: 'No se pudo eliminar', type: 'warning' });
+                }
+            } catch (err) {
+                console.error(err);
+                uiToast('Error al eliminar la compra', 'error', 5000);
+            }
         }
 
         // ===== Editar compra =====

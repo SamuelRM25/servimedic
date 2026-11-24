@@ -317,3 +317,118 @@ function calcularDescuentoEspecial(float $subtotal, string $tipo, $valor): array
     $monto = min(max(0.0, $monto), round($subtotal, 2));
     return ['monto' => $monto, 'tipo' => $tipo, 'valor' => $valor];
 }
+
+/**
+ * Clave para agrupar lotes del mismo medicamento en una sucursal:
+ * por código de medicamento; si no tiene código, por nombre + presentación + casa.
+ */
+function claveGrupoInventario(array $lote): string {
+    $codigo = trim((string) ($lote['codigo_medicamento'] ?? ''));
+    $base = $codigo !== ''
+        ? 'C:' . mb_strtolower($codigo, 'UTF-8')
+        : 'N:' . mb_strtolower(trim((string) ($lote['nom_medicamento'] ?? '')) . '|'
+            . trim((string) ($lote['presentacion_med'] ?? '')) . '|'
+            . trim((string) ($lote['casa_farmaceutica'] ?? '')), 'UTF-8');
+    return ($lote['id_sucursal'] ?? '0') . '|' . $base;
+}
+
+/**
+ * Junta los lotes disponibles en una sola opción por medicamento (para los
+ * buscadores de Pedidos y Despacho). Cada opción toma los datos del lote que
+ * vence primero y la existencia total del grupo.
+ */
+function agruparInventarioDisponible(array $lotes): array {
+    $grupos = [];
+    foreach ($lotes as $l) {
+        $k = claveGrupoInventario($l);
+        if (!isset($grupos[$k])) {
+            $grupos[$k] = $l;
+            $grupos[$k]['cantidad_med'] = 0;
+            $grupos[$k]['lotes_count'] = 0;
+            $grupos[$k]['_venc'] = null;
+        }
+        $grupos[$k]['cantidad_med'] += (int) $l['cantidad_med'];
+        $grupos[$k]['lotes_count']++;
+        // El lote "representante" es el que vence primero (sin fecha al final)
+        $v = $l['fecha_vencimiento'] ?: '9999-12-31';
+        if ($grupos[$k]['_venc'] === null || $v < $grupos[$k]['_venc']) {
+            $cant = $grupos[$k]['cantidad_med'];
+            $cnt = $grupos[$k]['lotes_count'];
+            $grupos[$k] = array_merge($grupos[$k], $l);
+            $grupos[$k]['cantidad_med'] = $cant;
+            $grupos[$k]['lotes_count'] = $cnt;
+            $grupos[$k]['_venc'] = $v;
+        }
+    }
+    foreach ($grupos as &$g) unset($g['_venc']);
+    unset($g);
+    $res = array_values($grupos);
+    usort($res, fn($a, $b) => strcasecmp((string) $a['nom_medicamento'], (string) $b['nom_medicamento']));
+    return $res;
+}
+
+/**
+ * Descuenta $cantidad unidades del medicamento al que pertenece el lote
+ * $idInventario, repartiendo entre los lotes de la misma sucursal y el mismo
+ * código, empezando por el que vence primero (FEFO).
+ * Debe llamarse dentro de una transacción.
+ *
+ * @return array<int,array{id_inventario:int,cantidad:int}> lotes usados y cuánto de cada uno
+ */
+function descontarInventarioFEFO(PDO $conn, int $idInventario, int $cantidad, string $nombre = ''): array {
+    if ($cantidad <= 0) return [];
+    $stmt = $conn->prepare("SELECT * FROM inventario WHERE id_inventario = ? FOR UPDATE");
+    $stmt->execute([$idInventario]);
+    $ref = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$ref) throw new Exception('Producto no encontrado en inventario: ' . $nombre);
+
+    $codigo = trim((string) ($ref['codigo_medicamento'] ?? ''));
+    if ($codigo !== '') {
+        $where = "codigo_medicamento = ?";
+        $params = [$codigo];
+    } else {
+        $where = "(codigo_medicamento IS NULL OR codigo_medicamento = '') AND nom_medicamento = ?
+                  AND presentacion_med <=> ? AND casa_farmaceutica <=> ?";
+        $params = [$ref['nom_medicamento'], $ref['presentacion_med'], $ref['casa_farmaceutica']];
+    }
+    $params[] = $ref['id_sucursal'];
+    $stmt = $conn->prepare("
+        SELECT id_inventario, cantidad_med FROM inventario
+        WHERE $where AND id_sucursal <=> ? AND estado_ingreso = 'Ingresado' AND cantidad_med > 0
+        ORDER BY (fecha_vencimiento IS NULL), fecha_vencimiento ASC, id_inventario ASC
+        FOR UPDATE
+    ");
+    $stmt->execute($params);
+    $lotes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $disponible = array_sum(array_map(fn($l) => (int) $l['cantidad_med'], $lotes));
+    if ($disponible < $cantidad) {
+        throw new Exception(sprintf('Stock insuficiente para: %s (disponible: %d)',
+            $nombre !== '' ? $nombre : $ref['nom_medicamento'], $disponible));
+    }
+
+    $upd = $conn->prepare("UPDATE inventario SET cantidad_med = cantidad_med - ? WHERE id_inventario = ? AND cantidad_med >= ?");
+    $usados = [];
+    $falta = $cantidad;
+    foreach ($lotes as $l) {
+        if ($falta <= 0) break;
+        $toma = min($falta, (int) $l['cantidad_med']);
+        $upd->execute([$toma, $l['id_inventario'], $toma]);
+        if ($upd->rowCount() === 0) throw new Exception('Stock insuficiente para: ' . ($nombre ?: $ref['nom_medicamento']));
+        $usados[] = ['id_inventario' => (int) $l['id_inventario'], 'cantidad' => $toma];
+        $falta -= $toma;
+    }
+    return $usados;
+}
+
+/** Reparte un subtotal entre varias cantidades (el último lleva el ajuste de centavos). */
+function repartirSubtotal(array $usados, float $precio, float $subtotal): array {
+    $acum = 0.0;
+    $n = count($usados);
+    foreach ($usados as $i => &$u) {
+        $u['subtotal'] = ($i === $n - 1) ? round($subtotal - $acum, 2) : round($u['cantidad'] * $precio, 2);
+        $acum += $u['subtotal'];
+    }
+    unset($u);
+    return $usados;
+}

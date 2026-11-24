@@ -41,6 +41,24 @@ try {
     $stmt->execute([$id]);
     $detalles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Una venta que usó varios lotes del mismo medicamento queda en varias líneas
+    // seguidas: se juntan para mostrarlas (PDF, ticket) como una sola.
+    $juntos = [];
+    foreach ($detalles as $d) {
+        $ult = count($juntos) - 1;
+        if ($ult >= 0
+            && (string) $juntos[$ult]['descripcion'] === (string) $d['descripcion']
+            && (string) $juntos[$ult]['codigo_item'] === (string) $d['codigo_item']
+            && (float) $juntos[$ult]['precio_unitario'] === (float) $d['precio_unitario']
+            && (string) ($juntos[$ult]['codigo_medicamento'] ?? '') === (string) ($d['codigo_medicamento'] ?? '')) {
+            $juntos[$ult]['cantidad'] = (int) $juntos[$ult]['cantidad'] + (int) $d['cantidad'];
+            $juntos[$ult]['subtotal'] = round((float) $juntos[$ult]['subtotal'] + (float) $d['subtotal'], 2);
+            continue;
+        }
+        $juntos[] = $d;
+    }
+    $detalles = $juntos;
+
     echo json_encode([
         'success' => true,
         'pedido' => $pedido,

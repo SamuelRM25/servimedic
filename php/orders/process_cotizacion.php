@@ -57,17 +57,25 @@ try {
 
     $conn->beginTransaction();
 
-    // Descontar inventario
-    $stmtInventario = $conn->prepare("
-        UPDATE inventario
-        SET cantidad_med = cantidad_med - ?
-        WHERE id_inventario = ? AND cantidad_med >= ?
+    // Descontar inventario por medicamento, empezando por el lote que vence primero.
+    // Si se usan varios lotes, la línea de la cotización se divide en una por lote.
+    $stmtActDet = $conn->prepare("UPDATE detalle_pedidos SET id_inventario = ?, cantidad = ?, subtotal = ? WHERE id_detalle_pedido = ?");
+    $stmtNuevoDet = $conn->prepare("
+        INSERT INTO detalle_pedidos (id_pedido, id_inventario, codigo_item, descripcion, cantidad, precio_unitario, subtotal)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
+    $lineasVenta = [];
     foreach ($detalles as $det) {
         if (empty($det['id_inventario'])) continue;
-        $stmtInventario->execute([$det['cantidad'], $det['id_inventario'], $det['cantidad']]);
-        if ($stmtInventario->rowCount() === 0) {
-            throw new Exception('Stock insuficiente para: ' . ($det['descripcion'] ?: $det['id_inventario']));
+        $usados = descontarInventarioFEFO($conn, (int) $det['id_inventario'], (int) $det['cantidad'], (string) ($det['descripcion'] ?? ''));
+        $usados = repartirSubtotal($usados, (float) $det['precio_unitario'], (float) $det['subtotal']);
+        foreach ($usados as $i => $u) {
+            if ($i === 0) {
+                $stmtActDet->execute([$u['id_inventario'], $u['cantidad'], $u['subtotal'], $det['id_detalle_pedido']]);
+            } else {
+                $stmtNuevoDet->execute([$idPedido, $u['id_inventario'], $det['codigo_item'], $det['descripcion'], $u['cantidad'], $det['precio_unitario'], $u['subtotal']]);
+            }
+            $lineasVenta[] = ['id_inventario' => $u['id_inventario'], 'cantidad' => $u['cantidad'], 'precio' => (float) $det['precio_unitario'], 'subtotal' => $u['subtotal']];
         }
     }
 
@@ -135,14 +143,13 @@ try {
         INSERT INTO detalle_ventas (id_venta, id_inventario, cantidad, precio_unitario, subtotal)
         VALUES (?, ?, ?, ?, ?)
     ");
-    foreach ($detalles as $det) {
-        if (empty($det['id_inventario'])) continue;
+    foreach ($lineasVenta as $lv) {
         $stmtDetalleVenta->execute([
             $idVenta,
-            (int) $det['id_inventario'],
-            $det['cantidad'],
-            $det['precio_unitario'],
-            $det['subtotal']
+            $lv['id_inventario'],
+            $lv['cantidad'],
+            $lv['precio'],
+            $lv['subtotal']
         ]);
     }
 

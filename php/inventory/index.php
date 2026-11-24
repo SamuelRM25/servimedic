@@ -35,18 +35,20 @@ try {
     // Administrador ve todo. Los demás solo su sucursal.
     if ($userRole === 'Administrador') {
         $stmt = $conn->prepare("
-            SELECT i.*, s.nombre as sucursal_nombre 
+            SELECT i.*, s.nombre as sucursal_nombre, c.lote as lote
             FROM inventario i
             LEFT JOIN sucursales s ON i.id_sucursal = s.id_sucursal
+            LEFT JOIN compras c ON c.id_compra = i.id_compra
             ORDER BY i.fecha_vencimiento ASC
         ");
         $stmt->execute();
     } else {
         if ($userSucursal) {
             $stmt = $conn->prepare("
-                SELECT i.*, s.nombre as sucursal_nombre 
+                SELECT i.*, s.nombre as sucursal_nombre, c.lote as lote
                 FROM inventario i
                 LEFT JOIN sucursales s ON i.id_sucursal = s.id_sucursal
+                LEFT JOIN compras c ON c.id_compra = i.id_compra
                 WHERE i.id_sucursal = ?
                 ORDER BY i.fecha_vencimiento ASC
             ");
@@ -59,6 +61,31 @@ try {
     }
     
     $medicamentos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Agrupar lotes del mismo medicamento (mismo código y sucursal)
+    $grupos = [];
+    foreach ($medicamentos as $med) {
+        $k = claveGrupoInventario($med);
+        if (!isset($grupos[$k])) {
+            $grupos[$k] = ['id' => 'g' . count($grupos), 'lotes' => [], 'total' => 0];
+        }
+        $grupos[$k]['lotes'][] = $med;
+        $grupos[$k]['total'] += (int) $med['cantidad_med'];
+    }
+    foreach ($grupos as &$g) {
+        // Lotes con existencia primero (el que vence antes arriba); los vacíos al final
+        usort($g['lotes'], function ($a, $b) {
+            $za = (int) $a['cantidad_med'] > 0 ? 0 : 1;
+            $zb = (int) $b['cantidad_med'] > 0 ? 0 : 1;
+            if ($za !== $zb) return $za - $zb;
+            return strcmp($a['fecha_vencimiento'] ?: '9999-12-31', $b['fecha_vencimiento'] ?: '9999-12-31');
+        });
+        $g['principal'] = $g['lotes'][0];
+    }
+    unset($g);
+    uasort($grupos, fn($a, $b) => strcasecmp((string) $a['principal']['nom_medicamento'], (string) $b['principal']['nom_medicamento']));
+    $gruposActivos  = array_filter($grupos, fn($g) => $g['total'] > 0);
+    $gruposAgotados = array_filter($grupos, fn($g) => $g['total'] <= 0);
     
     // Obtener sucursales activas para los formularios
     $stmt = $conn->prepare("SELECT * FROM sucursales WHERE activa = 1 ORDER BY nombre");
@@ -307,6 +334,33 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             color: white;
             white-space: nowrap;
         }
+
+        .inv-tabs { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .inv-tab {
+            display: inline-flex; align-items: center; gap: .5rem; padding: .6rem 1.1rem;
+            border: 2px solid var(--color-border, #E2E8F0); border-radius: 12px; background: #fff;
+            font-family: inherit; font-weight: 600; font-size: .9rem; color: var(--color-text-light, #718096); cursor: pointer;
+        }
+        .inv-tab.active { border-color: var(--color-blue, #1FA8FF); color: var(--color-blue, #1FA8FF); background: #EBF8FF; }
+        .inv-tab[data-inv-tab="agotados"].active { border-color: #E53E3E; color: #C53030; background: #FFF5F5; }
+        .inv-tab-count { background: rgba(0,0,0,.07); padding: .05rem .55rem; border-radius: 999px; font-size: .78rem; }
+        .inv-tabs-hint { margin-left: auto; font-size: .8rem; color: var(--color-text-light, #718096); }
+        .grp-toggle {
+            width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--color-border, #E2E8F0);
+            background: #fff; cursor: pointer; margin-right: .35rem; vertical-align: middle;
+            display: inline-flex; align-items: center; justify-content: center; transition: transform .2s ease;
+        }
+        tr.is-group.open .grp-toggle { transform: rotate(90deg); background: #EBF8FF; border-color: #90CDF4; }
+        .lotes-chip {
+            display: inline-block; margin-left: .4rem; padding: .1rem .5rem; border-radius: 999px;
+            background: #EDF2F7; color: #4A5568; font-size: .72rem; font-weight: 600; vertical-align: middle;
+        }
+        tr.lot-row { display: none; background: #F7FAFC; }
+        tr.lot-row td { font-size: .85rem; }
+        tr.lot-row td:first-child { border-left: 3px solid #90CDF4; }
+        tr.lot-row.lot-zero { opacity: .55; }
+        .lot-label { color: #4A5568; font-weight: 600; }
+        tr.inv-empty td { text-align: center; padding: 2.5rem 1rem; color: var(--color-text-light, #718096); }
 
         tbody tr {
             border-bottom: 1px solid var(--color-border);
@@ -748,8 +802,8 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
         <!-- Stats -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-label">Total Medicamentos</div>
-                <div class="stat-value"><?php echo count($medicamentos); ?></div>
+                <div class="stat-label">Medicamentos con existencia</div>
+                <div class="stat-value"><?php echo count($gruposActivos); ?></div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Por Vencer (60 días)</div>
@@ -758,7 +812,7 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                     $porVencer = 0;
                     $today = new DateTime();
                     foreach ($medicamentos as $med) {
-                        if (!empty($med['fecha_vencimiento'])) {
+                        if ((int) $med['cantidad_med'] > 0 && !empty($med['fecha_vencimiento'])) {
                             $venc = new DateTime($med['fecha_vencimiento']);
                             $diff = $today->diff($venc)->days;
                             if ($diff <= 60 && $venc > $today) $porVencer++;
@@ -771,9 +825,20 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             <div class="stat-card">
                 <div class="stat-label">Stock Bajo (&lt; 50)</div>
                 <div class="stat-value">
-                    <?php echo count(array_filter($medicamentos, fn($m) => $m['cantidad_med'] < 50)); ?>
+                    <?php echo count(array_filter($gruposActivos, fn($g) => $g['total'] < 50)); ?>
                 </div>
             </div>
+        </div>
+
+        <!-- Pestañas -->
+        <div class="inv-tabs">
+            <button type="button" class="inv-tab active" data-inv-tab="disponibles" onclick="setInvTab('disponibles')">
+                <i class="bi bi-box-seam"></i> Disponibles <span class="inv-tab-count"><?php echo count($gruposActivos); ?></span>
+            </button>
+            <button type="button" class="inv-tab" data-inv-tab="agotados" onclick="setInvTab('agotados')">
+                <i class="bi bi-x-octagon"></i> Agotados <span class="inv-tab-count"><?php echo count($gruposAgotados); ?></span>
+            </button>
+            <span class="inv-tabs-hint" id="invTabsHint">Un renglón por medicamento · toca <i class="bi bi-chevron-right"></i> para ver sus lotes</span>
         </div>
 
         <!-- Table -->
@@ -803,8 +868,10 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                         </tr>
                     </thead>
                     <tbody>
-                    <tbody>
-                        <?php foreach ($medicamentos as $med): 
+                        <?php
+                        // Fila de un lote (o de un medicamento con un solo lote)
+                        $filaLote = function (array $med, string $gid, string $tab, bool $esLote, string $rowAttrs = '') use ($userRole) {
+                            $rowClass = $esLote ? 'lot-row' . ((int) $med['cantidad_med'] <= 0 ? ' lot-zero' : '') : 'inv-head is-single';
                             $isDateMissing = empty($med['fecha_vencimiento']);
                             $isExpired = false;
                             $isCloseToExpiry = false;
@@ -817,9 +884,9 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                                 $isCloseToExpiry = !$isExpired && $diff->days <= 30;
                             }
                         ?>
-                        <tr data-expired="<?php echo $isExpired ? '1' : '0'; ?>" data-status="<?php echo $med['estado_ingreso'] ?? 'Ingresado'; ?>">
+                        <tr class="<?php echo $rowClass; ?>" data-gid="<?php echo $gid; ?>" data-tab="<?php echo $tab; ?>" data-expired="<?php echo $isExpired ? '1' : '0'; ?>" data-status="<?php echo $med['estado_ingreso'] ?? 'Ingresado'; ?>"<?php echo $rowAttrs; ?>>
                             <td><span class="badge badge-info"><?php echo htmlspecialchars(!empty($med['codigo_medicamento']) ? $med['codigo_medicamento'] : (!empty($med['codigo_referencia']) ? $med['codigo_referencia'] : 'N/A')); ?></span></td>
-                            <td><strong><?php echo htmlspecialchars($med['nom_medicamento']); ?></strong></td>
+                            <td><?php if ($esLote): ?><span class="lot-label"><i class="bi bi-arrow-return-right"></i> <?php echo !empty($med['lote']) ? 'Lote ' . htmlspecialchars($med['lote']) : ('Ingreso ' . (!empty($med['fecha_adquisicion']) ? date('d/m/Y', strtotime($med['fecha_adquisicion'])) : '#' . (int) $med['id_inventario'])); ?></span><?php else: ?><strong><?php echo htmlspecialchars($med['nom_medicamento']); ?></strong><?php endif; ?></td>
                             <td><?php echo htmlspecialchars($med['mol_medicamento']); ?></td>
                             <td><?php echo htmlspecialchars($med['presentacion_med']); ?></td>
                             <td><?php echo htmlspecialchars($med['casa_farmaceutica']); ?></td>
@@ -903,7 +970,72 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
                             </td>
                             <?php endif; ?>
                         </tr>
-                        <?php endforeach; ?>
+                        <?php };
+
+                        $render = function (array $lista, string $tab) use ($filaLote, $userRole) {
+                            $hoy = new DateTime();
+                            foreach ($lista as $g):
+                                $gid = $g['id'];
+                                $lotes = $g['lotes'];
+                                $p = $g['principal'];
+                                $buscar = htmlspecialchars(mb_strtolower(implode(' ', array_map(fn($l) => implode(' ', [
+                                    $l['codigo_medicamento'] ?? '', $l['nom_medicamento'], $l['mol_medicamento'], $l['presentacion_med'],
+                                    $l['casa_farmaceutica'], $l['sucursal_nombre'] ?? '', $l['lote'] ?? '', $l['numero_factura'] ?? ''
+                                ]), $lotes)), 'UTF-8'));
+                                if (count($lotes) === 1) {
+                                    $filaLote($p, $gid, $tab, false, ' data-search="' . $buscar . '"');
+                                    continue;
+                                }
+                                // Resumen del grupo
+                                $conStock = array_values(array_filter($lotes, fn($l) => (int) $l['cantidad_med'] > 0));
+                                $base = $conStock ?: $lotes;
+                                $vencs = array_filter(array_map(fn($l) => $l['fecha_vencimiento'], $base));
+                                $proxVenc = $vencs ? min($vencs) : null;
+                                $estado = 'Vigente'; $todosVencidos = true;
+                                foreach ($base as $l) {
+                                    if (empty($l['fecha_vencimiento'])) { $todosVencidos = false; if ($estado === 'Vigente') $estado = 'Sin Fecha'; continue; }
+                                    $vv = new DateTime($l['fecha_vencimiento']);
+                                    if ($vv < $hoy) { $estado = 'Vencido'; }
+                                    else { $todosVencidos = false; if ($estado !== 'Vencido' && $hoy->diff($vv)->days <= 30) $estado = 'Por vencer'; }
+                                }
+                                $pendientes = count(array_filter($lotes, fn($l) => in_array($l['estado_ingreso'] ?? 'Ingresado', ['Pendiente', 'En Traslado'], true)));
+                                $adqs = array_filter(array_map(fn($l) => $l['fecha_adquisicion'], $lotes));
+                                $ultAdq = $adqs ? max($adqs) : null;
+                                $total = $g['total'];
+                                $badgeEstado = ['Vencido' => 'badge-danger', 'Por vencer' => 'badge-warning', 'Sin Fecha' => 'badge-secondary', 'Vigente' => 'badge-success'][$estado];
+                            ?>
+                        <tr class="inv-head is-group" data-gid="<?php echo $gid; ?>" data-tab="<?php echo $tab; ?>" data-search="<?php echo $buscar; ?>" data-expired="<?php echo $todosVencidos ? '1' : '0'; ?>">
+                            <td><span class="badge badge-info"><?php echo htmlspecialchars($p['codigo_medicamento'] ?: ($p['codigo_referencia'] ?: 'N/A')); ?></span></td>
+                            <td>
+                                <button type="button" class="grp-toggle" onclick="toggleGrupo('<?php echo $gid; ?>')" title="Ver lotes">
+                                    <i class="bi bi-chevron-right"></i>
+                                </button>
+                                <strong><?php echo htmlspecialchars($p['nom_medicamento']); ?></strong>
+                                <span class="lotes-chip"><?php echo count($conStock); ?> lote<?php echo count($conStock) === 1 ? '' : 's'; ?><?php echo count($lotes) > count($conStock) && $total > 0 ? ' · ' . (count($lotes) - count($conStock)) . ' agotado' . ((count($lotes) - count($conStock)) === 1 ? '' : 's') : ''; ?></span>
+                            </td>
+                            <td><?php echo htmlspecialchars($p['mol_medicamento']); ?></td>
+                            <td><?php echo htmlspecialchars($p['presentacion_med']); ?></td>
+                            <td><?php echo htmlspecialchars($p['casa_farmaceutica']); ?></td>
+                            <td><span class="badge <?php echo $total == 0 ? 'badge-danger' : ($total < 50 ? 'badge-warning' : 'badge-success'); ?>" style="font-size:.85rem;"><?php echo $total; ?></span></td>
+                            <?php if ($userRole === 'Administrador'): ?>
+                            <td><?php echo htmlspecialchars($p['sucursal_nombre'] ?? 'Sin sucursal'); ?></td>
+                            <?php endif; ?>
+                            <td><span class="badge badge-secondary">Varias</span></td>
+                            <td><?php echo $ultAdq ? date('d/m/Y', strtotime($ultAdq)) : '-'; ?></td>
+                            <td><?php echo $proxVenc ? date('d/m/Y', strtotime($proxVenc)) : '-'; ?><?php if ($proxVenc && count($vencs) > 1): ?><br><small style="color:var(--color-text-light);">el más próximo</small><?php endif; ?></td>
+                            <td><span class="badge <?php echo $badgeEstado; ?>"><?php echo $estado; ?></span></td>
+                            <td><?php if ($pendientes): ?><span class="badge badge-warning"><?php echo $pendientes; ?> pendiente<?php echo $pendientes === 1 ? '' : 's'; ?></span><?php else: ?><span class="badge badge-success">Ingresado</span><?php endif; ?></td>
+                            <?php if (in_array($userRole, ['Administrador', 'Farmacia', 'Mayoreo'])): ?>
+                            <td><button type="button" class="action-btn" style="width:auto; padding:0 .7rem; gap:.3rem; font-size:.8rem;" onclick="toggleGrupo('<?php echo $gid; ?>')"><i class="bi bi-layers"></i> Lotes</button></td>
+                            <?php endif; ?>
+                        </tr>
+                            <?php
+                                foreach ($lotes as $l) $filaLote($l, $gid, $tab, true);
+                            endforeach;
+                        };
+                        $render($gruposActivos, 'disponibles');
+                        $render($gruposAgotados, 'agotados');
+                        ?>
                     </tbody>
                 </table>
                 <?php else: ?>
@@ -1292,60 +1424,100 @@ $apellido_usuario = $_SESSION['apellido'] ?? '';
             ));
         }
 
-        // Search functionality
-        document.getElementById('searchInput').addEventListener('input', function() {
-            const searchText = this.value.toLowerCase();
-            const rows = document.querySelectorAll('#inventoryTable tbody tr');
-            
-            rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(searchText) ? '' : 'none';
-            });
-        });
-
-        // Toggle Pending
-        const togglePendingBtn = document.getElementById('togglePendingBtn');
+        // ===== Filtros del inventario (pestaña, búsqueda, pendientes, vencidos) =====
+        let invTab = 'disponibles';
         let showPendingOnly = false;
+        let showExpired = true;
+        const gruposAbiertos = new Set();
 
-        togglePendingBtn.addEventListener('click', function() {
-            showPendingOnly = !showPendingOnly;
-            const rows = document.querySelectorAll('#inventoryTable tbody tr');
-            
-            rows.forEach(row => {
-                const status = row.getAttribute('data-status');
-                if (showPendingOnly) {
-                    if (status === 'Pendiente' || status === 'En Traslado') {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                } else {
-                    row.style.display = '';
+        function setInvTab(tab) {
+            invTab = tab;
+            document.querySelectorAll('.inv-tab').forEach(b => b.classList.toggle('active', b.dataset.invTab === tab));
+            document.getElementById('invTabsHint').textContent = tab === 'agotados'
+                ? 'Medicamentos sin existencia: se conservan para ver su historial y volver a pedirlos'
+                : 'Un renglón por medicamento · toca la flecha para ver sus lotes';
+            try { sessionStorage.setItem('invTab', tab); } catch (e) {}
+            aplicarFiltrosInv();
+        }
+
+        function toggleGrupo(gid) {
+            if (gruposAbiertos.has(gid)) gruposAbiertos.delete(gid); else gruposAbiertos.add(gid);
+            aplicarFiltrosInv();
+        }
+
+        function aplicarFiltrosInv() {
+            const q = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+            const table = document.getElementById('inventoryTable');
+            if (!table) return;
+            let visibles = 0;
+            table.querySelectorAll('tbody tr.inv-head').forEach(head => {
+                const gid = head.dataset.gid;
+                const lotes = head.classList.contains('is-single')
+                    ? [head]
+                    : Array.from(table.querySelectorAll(`tbody tr.lot-row[data-gid="${gid}"]`));
+                const coincideGrupo = !q || (head.dataset.search || head.textContent.toLowerCase()).includes(q);
+                const okLote = tr => {
+                    const st = tr.dataset.status;
+                    if (showPendingOnly && st !== 'Pendiente' && st !== 'En Traslado') return false;
+                    if (!showExpired && tr.dataset.expired === '1') return false;
+                    return coincideGrupo || tr.textContent.toLowerCase().includes(q);
+                };
+                const algunLote = lotes.some(okLote);
+                const mostrar = head.dataset.tab === invTab && algunLote;
+                head.style.display = mostrar ? '' : 'none';
+                if (mostrar) visibles++;
+                if (!head.classList.contains('is-single')) {
+                    // Los lotes se ven al abrir el grupo o cuando hay un filtro de pendientes activo
+                    const abierto = mostrar && (gruposAbiertos.has(gid) || showPendingOnly);
+                    head.classList.toggle('open', abierto);
+                    lotes.forEach(tr => { tr.style.display = abierto && okLote(tr) ? 'table-row' : 'none'; });
                 }
             });
-            
+            // Mensaje cuando no hay nada que mostrar
+            const tbody = table.querySelector('tbody');
+            let vacio = tbody.querySelector('tr.inv-empty');
+            if (!visibles) {
+                if (!vacio) {
+                    vacio = document.createElement('tr');
+                    vacio.className = 'inv-empty';
+                    vacio.innerHTML = `<td colspan="${table.querySelectorAll('thead th').length}"></td>`;
+                    tbody.appendChild(vacio);
+                }
+                vacio.firstElementChild.textContent = q ? 'No se encontraron medicamentos con esa búsqueda'
+                    : (invTab === 'agotados' ? 'No hay medicamentos agotados' : 'No hay medicamentos con existencia');
+                vacio.style.display = '';
+            } else if (vacio) {
+                vacio.style.display = 'none';
+            }
+        }
+
+        document.getElementById('searchInput').addEventListener('input', aplicarFiltrosInv);
+
+        const togglePendingBtn = document.getElementById('togglePendingBtn');
+        togglePendingBtn.addEventListener('click', function() {
+            showPendingOnly = !showPendingOnly;
             this.classList.toggle('btn-primary');
             this.classList.toggle('btn-outline');
-            this.innerHTML = showPendingOnly 
+            this.innerHTML = showPendingOnly
                 ? '<i class="bi bi-list-ul"></i><span>Ver Todos</span>'
                 : '<i class="bi bi-hourglass-split"></i><span>Ver Pendientes</span>';
+            aplicarFiltrosInv();
         });
 
-        // Toggle Expired
-        let showExpired = true; // Keep this declaration here or move it if it's meant to be global for other functions
         const toggleExpiredBtn = document.getElementById('toggleExpiredBtn');
         toggleExpiredBtn.addEventListener('click', function() {
             showExpired = !showExpired;
-            const rows = document.querySelectorAll('#inventoryTable tbody tr[data-expired="1"]');
-            
-            rows.forEach(row => {
-                row.style.display = showExpired ? '' : 'none';
-            });
-            
-            this.innerHTML = showExpired 
+            this.innerHTML = showExpired
                 ? '<i class="bi bi-eye-slash"></i><span>Ocultar Vencidos</span>'
                 : '<i class="bi bi-eye"></i><span>Mostrar Vencidos</span>';
+            aplicarFiltrosInv();
         });
+
+        (function () {
+            let t = 'disponibles';
+            try { t = sessionStorage.getItem('invTab') || 'disponibles'; } catch (e) {}
+            setInvTab(t === 'agotados' ? 'agotados' : 'disponibles');
+        })();
 
         function openTransferModal(id, name, maxQty) {
             document.getElementById('transfer_id').value = id;

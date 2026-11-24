@@ -133,6 +133,7 @@ $sqlVentas = "
     LEFT JOIN pedidos p ON v.id_pedido = p.id_pedido
     WHERE $whereVentasSQL
     GROUP BY v.id_venta
+    ORDER BY v.fecha_venta DESC, v.id_venta DESC
 ";
 $stmtVentas = $conn->prepare($sqlVentas);
 $stmtVentas->execute($paramsVentas);
@@ -297,6 +298,7 @@ function calcularCajaChica(PDO $conn, ?string $fi, ?string $ff): array
     $mov = [];
     $ingresosVentas = 0.0;
     $ingresosManual = 0.0;
+    $ingresosPorCategoria = [];
     $abonosProv = 0.0;
     $comisionTarjeta = 0.0;
     $cargoCOD = 0.0;
@@ -448,6 +450,8 @@ function calcularCajaChica(PDO $conn, ?string $fi, ?string $ff): array
         $monto = (float) $m['monto'];
         if ($esIngreso) {
             $ingresosManual += $monto;
+            $catIng = $m['categoria'] ?: 'Otros ingresos';
+            $ingresosPorCategoria[$catIng] = ($ingresosPorCategoria[$catIng] ?? 0) + $monto;
         } else {
             $gastosManual += $monto;
         }
@@ -461,7 +465,7 @@ function calcularCajaChica(PDO $conn, ?string $fi, ?string $ff): array
         ];
     }
 
-    // Orden cronológico y saldo acumulado
+    // Saldo acumulado en orden cronológico; luego se muestra lo más reciente primero
     usort($mov, fn($x, $y) => strcmp($x['fecha_sort'], $y['fecha_sort']));
     $saldo = 0.0;
     foreach ($mov as &$m) {
@@ -469,12 +473,14 @@ function calcularCajaChica(PDO $conn, ?string $fi, ?string $ff): array
         $m['saldo_acum'] = $saldo;
     }
     unset($m);
+    $mov = array_reverse($mov);
 
     return [
         'movimientos'         => $mov,
         'ventas_cobradas'     => $ventasCobradas,
         'ingresos_ventas'     => round($ingresosVentas, 2),
         'ingresos_manual'     => round($ingresosManual, 2),
+        'ingresos_por_categoria' => $ingresosPorCategoria,
         'ingresos_total'      => round($ingresosVentas + $ingresosManual, 2),
         'ventas_efectivo'     => round($ventasEfectivo, 2),
         'ventas_transferencia'=> round($ventasTransferencia, 2),
@@ -492,6 +498,11 @@ function calcularCajaChica(PDO $conn, ?string $fi, ?string $ff): array
 
 $cajaPeriodo = calcularCajaChica($conn, $datetime_inicio, $datetime_fin);
 $cajaTotal   = calcularCajaChica($conn, null, null);
+
+// Otros ingresos registrados en Caja Chica (reposición de fondo, aportes, ventas fuera del sistema, etc.)
+$otrosIngresosCaja = $cajaPeriodo['ingresos_manual'];
+$totalIngresos += $otrosIngresosCaja;
+$balanceNeto = $totalIngresos - $totalEgresos;
 
 // Saldo pendiente con proveedores (histórico)
 $stmtProvPend = $conn->query("SELECT SUM(saldo) FROM compras");
@@ -658,8 +669,11 @@ if ($userRol === 'Doctor') {
                 <i class="bi bi-printer"></i> Imprimir
             </button>
             <?php if ($userRol === 'Administrador'): ?>
-            <button class="btn btn-primary" onclick="openExpenseModal()">
-                <i class="bi bi-cash-coin"></i> Registrar Movimiento
+            <button class="btn btn-secondary" onclick="openExpenseModal('Egreso')" style="background:#fff5f5; color:#9b2c2c; border-color:#feb2b2;">
+                <i class="bi bi-dash-circle"></i> Registrar Gasto
+            </button>
+            <button class="btn btn-primary" onclick="openExpenseModal('Ingreso')" style="background: linear-gradient(135deg,#38a169,#2f855a);">
+                <i class="bi bi-plus-circle"></i> Registrar Ingreso
             </button>
             <?php endif; ?>
         </div>
@@ -951,9 +965,9 @@ if ($userRol === 'Doctor') {
                             <tr><td>Ventas por transferencia</td><td style="text-align:right;"><strong>Q<?php echo number_format($cajaPeriodo['ventas_transferencia'], 2); ?></strong></td></tr>
                             <tr><td>Ventas con tarjeta</td><td style="text-align:right;"><strong>Q<?php echo number_format($cajaPeriodo['ventas_tarjeta'], 2); ?></strong></td></tr>
                             <tr><td>Ventas COD (contra entrega)</td><td style="text-align:right;"><strong>Q<?php echo number_format($cajaPeriodo['ventas_cod'], 2); ?></strong></td></tr>
-                            <?php if ($cajaPeriodo['ingresos_manual'] > 0): ?>
-                            <tr><td>Ingresos manuales de caja</td><td style="text-align:right;"><strong>Q<?php echo number_format($cajaPeriodo['ingresos_manual'], 2); ?></strong></td></tr>
-                            <?php endif; ?>
+                            <?php foreach ($cajaPeriodo['ingresos_por_categoria'] as $catIng => $montoIng): ?>
+                            <tr><td><i class="bi bi-plus-circle" style="color:#2f855a;"></i> <?php echo htmlspecialchars($catIng); ?></td><td style="text-align:right;"><strong>Q<?php echo number_format($montoIng, 2); ?></strong></td></tr>
+                            <?php endforeach; ?>
                             <tr style="font-weight: 700; background: #f7fafc;">
                                 <td>TOTAL INGRESOS</td>
                                 <td style="text-align:right;">Q<?php echo number_format($cajaPeriodo['ingresos_total'], 2); ?></td>
@@ -986,7 +1000,15 @@ if ($userRol === 'Doctor') {
             </div>
 
             <div class="table-container">
-                <h3 style="margin-bottom: 1rem;"><i class="bi bi-journal-text"></i> Movimientos de Caja Chica del Periodo</h3>
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom: 1rem;">
+                    <h3 style="margin: 0;"><i class="bi bi-journal-text"></i> Movimientos de Caja Chica del Periodo <small style="font-weight:400; color:#718096; font-size:.8rem;">(más recientes primero)</small></h3>
+                    <?php if ($userRol === 'Administrador'): ?>
+                    <div class="no-print" style="display:flex; gap:.5rem;">
+                        <button class="btn btn-secondary" onclick="openExpenseModal('Egreso')" style="background:#fff5f5; color:#9b2c2c; border-color:#feb2b2;"><i class="bi bi-dash-circle"></i> Gasto</button>
+                        <button class="btn btn-primary" onclick="openExpenseModal('Ingreso')" style="background: linear-gradient(135deg,#38a169,#2f855a);"><i class="bi bi-plus-circle"></i> Otro ingreso</button>
+                    </div>
+                    <?php endif; ?>
+                </div>
                 <table class="table">
                     <thead>
                         <tr>
@@ -1040,6 +1062,7 @@ if ($userRol === 'Doctor') {
                 <div class="stat-card green">
                     <div class="stat-label">Ingresos Totales</div>
                     <div class="stat-value">Q<?php echo number_format($totalIngresos, 2); ?></div>
+                    <div class="stat-sub">Ventas<?php echo $otrosIngresosCaja > 0 ? ' + Otros ingresos (Q' . number_format($otrosIngresosCaja, 2) . ')' : ''; ?></div>
                 </div>
                 <div class="stat-card red">
                     <div class="stat-label">Egresos Totales</div>
@@ -1050,6 +1073,34 @@ if ($userRol === 'Doctor') {
                     <div class="stat-label">Balance Neto</div>
                     <div class="stat-value">Q<?php echo number_format($balanceNeto, 2); ?></div>
                 </div>
+            </div>
+
+            <div class="table-container" style="margin-bottom: 1.5rem;">
+                <h3 style="margin-bottom: 1rem;">Desglose de Ingresos</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Concepto</th>
+                            <th>Monto</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Ventas</td>
+                            <td>Q<?php echo number_format($totalIngresos - $otrosIngresosCaja, 2); ?></td>
+                        </tr>
+                        <?php foreach ($cajaPeriodo['ingresos_por_categoria'] as $catIng => $montoIng): ?>
+                        <tr>
+                            <td>Otros ingresos — <?php echo htmlspecialchars($catIng); ?></td>
+                            <td>Q<?php echo number_format($montoIng, 2); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <tr style="font-weight: bold; background: #f8f9fa;">
+                            <td>TOTAL INGRESOS</td>
+                            <td>Q<?php echo number_format($totalIngresos, 2); ?></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
 
             <div class="table-container">
@@ -1195,7 +1246,29 @@ if ($userRol === 'Doctor') {
             } catch (e) {}
         })();
 
-        function openExpenseModal() {
+        const CATEGORIAS_CAJA = {
+            Egreso: ['Servicios (luz, agua, internet)', 'Transporte / Envíos', 'Alimentación', 'Limpieza',
+                     'Mantenimiento', 'Papelería', 'Sueldos', 'Otros gastos'],
+            Ingreso: ['Reposición de fondo', 'Aporte / préstamo', 'Venta fuera del sistema', 'Otros ingresos']
+        };
+
+        function setExpenseTipo(tipo) {
+            tipo = tipo === 'Ingreso' ? 'Ingreso' : 'Egreso';
+            document.getElementById('expenseTipo').value = tipo;
+            const sel = document.getElementById('expenseCategoria');
+            sel.innerHTML = '';
+            CATEGORIAS_CAJA[tipo].forEach(c => sel.add(new Option(c, c)));
+            const esIng = tipo === 'Ingreso';
+            document.getElementById('expenseModalTitle').textContent = esIng ? 'Registrar Ingreso de Caja Chica' : 'Registrar Gasto de Caja Chica';
+            document.getElementById('expenseConcepto').placeholder = esIng
+                ? 'Ej. Reposición de fondo semanal, venta de mostrador sin factura...'
+                : 'Ej. Pago de energía eléctrica, almuerzo, envío...';
+            document.getElementById('expenseSubmitBtn').textContent = esIng ? 'Guardar Ingreso' : 'Guardar Gasto';
+        }
+
+        function openExpenseModal(tipo) {
+            document.getElementById('expenseForm').reset();
+            setExpenseTipo(tipo || 'Egreso');
             document.getElementById('expenseModal').classList.add('show');
         }
 
@@ -1218,7 +1291,8 @@ if ($userRol === 'Doctor') {
                     });
 
                     if (data.success) {
-                        uiToast('Movimiento registrado', 'success');
+                        uiToast(data.message || 'Movimiento registrado', 'success');
+                        try { sessionStorage.setItem('reportTab', 'caja'); } catch (e) {}
                         setTimeout(() => location.reload(), 800);
                     } else {
                         uiToast('Error: ' + data.message, 'error', 5000);
@@ -1243,7 +1317,7 @@ if ($userRol === 'Doctor') {
     <div class="modal-overlay" id="expenseModal">
         <div class="modal">
             <div class="modal-header">
-                <h2 class="modal-title">Registrar Movimiento de Caja Chica</h2>
+                <h2 class="modal-title" id="expenseModalTitle">Registrar Movimiento de Caja Chica</h2>
                 <button class="modal-close" onclick="closeExpenseModal()">
                     <i class="bi bi-x-lg"></i>
                 </button>
@@ -1252,29 +1326,18 @@ if ($userRol === 'Doctor') {
                 <div class="modal-body">
                     <div class="form-group" style="margin-bottom: 1rem;">
                         <label class="form-label">Tipo de Movimiento</label>
-                        <select name="tipo" class="form-control">
+                        <select name="tipo" id="expenseTipo" class="form-control" onchange="setExpenseTipo(this.value)">
                             <option value="Egreso">Gasto (sale dinero de la caja)</option>
                             <option value="Ingreso">Ingreso (entra dinero a la caja)</option>
                         </select>
                     </div>
                     <div class="form-group" style="margin-bottom: 1rem;">
                         <label class="form-label">Categoría</label>
-                        <select name="categoria" class="form-control">
-                            <option value="Servicios (luz, agua, internet)">Servicios (luz, agua, internet)</option>
-                            <option value="Transporte / Envíos">Transporte / Envíos</option>
-                            <option value="Alimentación">Alimentación</option>
-                            <option value="Limpieza">Limpieza</option>
-                            <option value="Mantenimiento">Mantenimiento</option>
-                            <option value="Papelería">Papelería</option>
-                            <option value="Sueldos">Sueldos</option>
-                            <option value="Aporte de capital">Aporte de capital</option>
-                            <option value="Préstamo recibido">Préstamo recibido</option>
-                            <option value="Otros gastos">Otros gastos</option>
-                        </select>
+                        <select name="categoria" id="expenseCategoria" class="form-control"></select>
                     </div>
                     <div class="form-group" style="margin-bottom: 1rem;">
                         <label class="form-label">Concepto</label>
-                        <input type="text" name="concepto" class="form-control" placeholder="Ej. Pago de energía eléctrica, almuerzo, envío..." required maxlength="255">
+                        <input type="text" name="concepto" id="expenseConcepto" class="form-control" placeholder="Ej. Pago de energía eléctrica, almuerzo, envío..." required maxlength="255">
                     </div>
                     <div class="form-group" style="margin-bottom: 1rem;">
                         <label class="form-label">Monto (Q)</label>
@@ -1296,7 +1359,7 @@ if ($userRol === 'Doctor') {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="closeExpenseModal()">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Guardar Movimiento</button>
+                    <button type="submit" class="btn btn-primary" id="expenseSubmitBtn">Guardar Movimiento</button>
                 </div>
             </form>
         </div>

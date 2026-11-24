@@ -196,34 +196,34 @@ try {
         VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
 
-    // Actualizar inventario (solo para ventas directas y solo items con inventario)
-    $stmtInventario = $conn->prepare("
-        UPDATE inventario
-        SET cantidad_med = cantidad_med - ?
-        WHERE id_inventario = ? AND cantidad_med >= ?
-    ");
-
+    // Actualizar inventario (solo ventas directas): se descuenta por medicamento,
+    // empezando por el lote que vence primero. Si se usan varios lotes, el
+    // detalle queda en una línea por lote (el PDF las vuelve a juntar).
+    $lineasVenta = [];
     foreach ($data['productos'] as $producto) {
         $idInv = !empty($producto['id_inventario']) ? (int) $producto['id_inventario'] : null;
-
-        $stmtDetalle->execute([
-            $idPedido,
-            $idInv,
-            $producto['codigo'] ?? null,
-            $producto['nombre'] ?? null,
-            $producto['cantidad'],
-            $producto['precio'],
-            $producto['subtotal']
-        ]);
+        $cant = (int) $producto['cantidad'];
+        $precio = (float) $producto['precio'];
 
         if (!$esCotizacion && $idInv) {
-            $stmtInventario->execute([
-                $producto['cantidad'],
-                $idInv,
-                $producto['cantidad']
+            $usados = descontarInventarioFEFO($conn, $idInv, $cant, (string) ($producto['nombre'] ?? ''));
+        } else {
+            $usados = [['id_inventario' => $idInv, 'cantidad' => $cant]];
+        }
+        $usados = repartirSubtotal($usados, $precio, (float) $producto['subtotal']);
+
+        foreach ($usados as $u) {
+            $stmtDetalle->execute([
+                $idPedido,
+                $u['id_inventario'],
+                $producto['codigo'] ?? null,
+                $producto['nombre'] ?? null,
+                $u['cantidad'],
+                $precio,
+                $u['subtotal']
             ]);
-            if ($stmtInventario->rowCount() === 0) {
-                throw new Exception('Stock insuficiente para: ' . ($producto['nombre'] ?? ''));
+            if ($u['id_inventario']) {
+                $lineasVenta[] = ['id_inventario' => $u['id_inventario'], 'cantidad' => $u['cantidad'], 'precio' => $precio, 'subtotal' => $u['subtotal']];
             }
         }
     }
@@ -260,14 +260,13 @@ try {
             INSERT INTO detalle_ventas (id_venta, id_inventario, cantidad, precio_unitario, subtotal)
             VALUES (?, ?, ?, ?, ?)
         ");
-        foreach ($data['productos'] as $producto) {
-            if (empty($producto['id_inventario'])) continue;
+        foreach ($lineasVenta as $lv) {
             $stmtDetalleVenta->execute([
                 $idVenta,
-                (int) $producto['id_inventario'],
-                $producto['cantidad'],
-                $producto['precio'],
-                $producto['subtotal']
+                $lv['id_inventario'],
+                $lv['cantidad'],
+                $lv['precio'],
+                $lv['subtotal']
             ]);
         }
 

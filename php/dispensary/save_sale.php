@@ -22,6 +22,20 @@ try {
     $database = new Database();
     $conn = $database->getConnection();
     
+    // Auto-Migration (antes de la transacción: un ALTER TABLE la cerraría): Verificar si existe la columna 'authorized_by' en detalle_ventas
+    // Esto es un parche para entornos de desarrollo donde no podemos correr migraciones manuales
+    try {
+        $conn->query("SELECT authorized_by FROM detalle_ventas LIMIT 1");
+    } catch (Exception $e) {
+        // Si falla, asumimos que no existe (o tabla vacía, pero el SELECT LIMIT 1 sobre columna específica fallará si columna no existe)
+        // Agregamos la columna
+        try {
+            $conn->exec("ALTER TABLE detalle_ventas ADD COLUMN authorized_by INT NULL DEFAULT NULL");
+        } catch (Exception $e2) {
+            // Ignorar si ya existe o error irrelevante
+        }
+    }
+
     // Iniciar transacción
     $conn->beginTransaction();
     
@@ -50,20 +64,6 @@ try {
     
     $idVenta = $conn->lastInsertId();
     
-    // Auto-Migration: Verificar si existe la columna 'authorized_by' en detalle_ventas
-    // Esto es un parche para entornos de desarrollo donde no podemos correr migraciones manuales
-    try {
-        $conn->query("SELECT authorized_by FROM detalle_ventas LIMIT 1");
-    } catch (Exception $e) {
-        // Si falla, asumimos que no existe (o tabla vacía, pero el SELECT LIMIT 1 sobre columna específica fallará si columna no existe)
-        // Agregamos la columna
-        try {
-            $conn->exec("ALTER TABLE detalle_ventas ADD COLUMN authorized_by INT NULL DEFAULT NULL");
-        } catch (Exception $e2) {
-            // Ignorar si ya existe o error irrelevante
-        }
-    }
-
     // Insertar detalles de venta
     $stmtDetalle = $conn->prepare("
         INSERT INTO detalle_ventas (
@@ -72,35 +72,21 @@ try {
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
     
-    // Actualizar inventario
-    $stmtInventario = $conn->prepare("
-        UPDATE inventario 
-        SET cantidad_med = cantidad_med - ?
-        WHERE id_inventario = ? AND cantidad_med >= ?
-    ");
-    
+    // Descontar inventario por medicamento, empezando por el lote que vence primero;
+    // el detalle queda en una línea por lote usado.
     foreach ($data['items'] as $item) {
-        // Insertar detalle
-        $stmtDetalle->execute([
-            $idVenta,
-            $item['id_inventario'],
-            $item['tipo_factura'] ?? null,
-            $item['cantidad'],
-            $item['precio_unitario'],
-            $item['subtotal'],
-            $item['authorized_by'] ?? null // Guardar ID del autorizador
-        ]);
-        
-        // Actualizar inventario
-        $stmtInventario->execute([
-            $item['cantidad'],
-            $item['id_inventario'],
-            $item['cantidad']
-        ]);
-        
-        // Verificar que se actualizó
-        if ($stmtInventario->rowCount() === 0) {
-            throw new Exception('Stock insuficiente para: ' . $item['nombre']);
+        $usados = descontarInventarioFEFO($conn, (int) $item['id_inventario'], (int) $item['cantidad'], (string) ($item['nombre'] ?? ''));
+        $usados = repartirSubtotal($usados, (float) $item['precio_unitario'], (float) $item['subtotal']);
+        foreach ($usados as $u) {
+            $stmtDetalle->execute([
+                $idVenta,
+                $u['id_inventario'],
+                $item['tipo_factura'] ?? null,
+                $u['cantidad'],
+                $item['precio_unitario'],
+                $u['subtotal'],
+                $item['authorized_by'] ?? null // Guardar ID del autorizador
+            ]);
         }
     }
     

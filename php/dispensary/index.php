@@ -37,7 +37,9 @@ try {
         ORDER BY i.nom_medicamento
     ");
     $stmt->execute();
-    $inventario = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Una opción por medicamento (mismo código y sucursal) con la existencia total;
+    // al vender se descuenta primero el lote que vence antes.
+    $inventario = agruparInventarioDisponible($stmt->fetchAll(PDO::FETCH_ASSOC));
     
 } catch (Exception $e) {
     die("Error: " . $e->getMessage());
